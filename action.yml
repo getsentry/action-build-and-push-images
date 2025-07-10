@@ -74,30 +74,6 @@ inputs:
     required: false
     default: 'amd64'
 
-  # Cache configuration
-  cache_enabled:
-    description: 'Enable build cache'
-    required: false
-    default: 'true'
-
-  cache_suffix:
-    description: 'Cache image suffix'
-    required: false
-    default: 'cache'
-
-outputs:
-  image:
-    description: 'Built image tag'
-    value: ${{ steps.output-images.outputs.image }}
-
-  image_digest:
-    description: 'Image digest'
-    value: ${{ steps.output-images.outputs.digest }}
-
-  pushed:
-    description: 'Whether image was pushed to registries'
-    value: ${{ steps.output-images.outputs.pushed }}
-
 runs:
   using: 'composite'
   steps:
