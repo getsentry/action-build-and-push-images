@@ -126,9 +126,29 @@ runs:
           echo "GHCR Image: $GHCR_IMAGE_NAME"
         fi
 
+        # Determine publishing conditions
+        PUBLISH_TO_GHCR="false"
+        PUBLISH_TO_GAR="false"
+
+        # GHCR: Publish on default branch push OR PR (if enabled)
+        if [[ "${{ inputs.ghcr }}" == "true" && (("${{ github.event_name }}" == "push" && "${{ github.ref_name }}" == "${{ github.event.repository.default_branch }}") || ("${{ github.event_name }}" == "pull_request" && "${{ inputs.publish_on_pr }}" == "true")) ]]; then
+          PUBLISH_TO_GHCR="true"
+        fi
+
+        # GAR: Publish on default branch push only
+        if [[ "${{ inputs.google_ar }}" == "true" && "${{ github.event_name }}" == "push" && "${{ github.ref_name }}" == "${{ github.event.repository.default_branch }}" ]]; then
+          PUBLISH_TO_GAR="true"
+        fi
+
+        echo "publish_to_ghcr=$PUBLISH_TO_GHCR" >> $GITHUB_OUTPUT
+        echo "publish_to_gar=$PUBLISH_TO_GAR" >> $GITHUB_OUTPUT
+        echo "Publishing to GHCR: $PUBLISH_TO_GHCR"
+        echo "Publishing to GAR: $PUBLISH_TO_GAR"
+
+
     - name: Extract metadata for GHCR
       id: meta-ghcr
-      if: inputs.ghcr == 'true' && (github.event_name == 'push' || (github.event_name == 'pull_request' && inputs.publish_on_pr == 'true'))
+      if: steps.setup.outputs.publish_to_ghcr == 'true'
       uses: docker/metadata-action@902fa8ec7d6ecbf8d84d538b9b233a880e428804 # v5.7.0
       with:
         images: ${{ steps.setup.outputs.ghcr_image_name }}
@@ -149,14 +169,14 @@ runs:
             org.opencontainers.image.url=${{ github.server_url }}/${{ github.repository }}
 
     - name: Login to GitHub Container Registry
-      if: inputs.ghcr == 'true' && (github.event_name == 'push' || (github.event_name == 'pull_request' && inputs.publish_on_pr == 'true'))
+      if: steps.setup.outputs.publish_to_ghcr == 'true'
       shell: bash
       run: |
         docker login ghcr.io -u "${{ github.actor }}" --password "${{ github.token }}"
 
     - name: Build and push to GHCR
       id: build-and-push-to-ghcr
-      if: inputs.ghcr == 'true' && (github.event_name == 'push' || (github.event_name == 'pull_request' && inputs.publish_on_pr == 'true'))
+      if: steps.setup.outputs.publish_to_ghcr == 'true'
       uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83 # v6.18.0
       with:
         context: ${{ inputs.build_context }}
@@ -166,15 +186,15 @@ runs:
         target: ${{ inputs.build_target }}
         tags: ${{ steps.meta-ghcr.outputs.tags }}
         labels: ${{ steps.meta-ghcr.outputs.labels }}
-        cache-from: type=gha,scope=${{ matrix.platform }}
-        cache-to: type=gha,mode=max,scope=${{ matrix.platform }}
+        cache-from: type=gha,scope=${{ inputs.platform }}
+        cache-to: type=gha,mode=max,scope=${{ inputs.platform }}
         provenance: mode=max
         sbom: true
         push: true
 
     - name: Extract metadata for GAR
       id: meta-gar
-      if: inputs.google_ar == 'true' && github.event_name == 'push' && github.ref_name == github.event.repository.default_branch
+      if: steps.setup.outputs.publish_to_gar == 'true'
       uses: docker/metadata-action@902fa8ec7d6ecbf8d84d538b9b233a880e428804 # v5.7.0
       with:
         images: ${{ inputs.google_ar_image_name }}
@@ -194,20 +214,20 @@ runs:
 
 
     - name: Setup Google Cloud authentication
-      if: inputs.google_ar == 'true' && github.event_name == 'push' && github.ref_name == github.event.repository.default_branch
+      if: steps.setup.outputs.publish_to_gar == 'true'
       uses: google-github-actions/auth@ba79af03959ebeac9769e648f473a284504d9193 # v2.1.10
       with:
         workload_identity_provider: ${{ inputs.google_workload_identity_provider }}
         service_account: ${{ inputs.google_service_account }}
 
     - name: Configure Docker for Google Artifact Registry
-      if: inputs.google_ar == 'true' && github.event_name == 'push' && github.ref_name == github.event.repository.default_branch
+      if: steps.setup.outputs.publish_to_gar == 'true'
       shell: bash
       run: |
         gcloud auth configure-docker $(echo "${{ inputs.google_ar_image_name }}" | cut -d'/' -f1)
 
     - name: Build and push to GAR
-      if: inputs.google_ar == 'true' && inputs.google_ar_image_name != '' && github.event_name == 'push' && github.ref_name == github.event.repository.default_branch
+      if: steps.setup.outputs.publish_to_gar == 'true'
       uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83 # v6.18.0
       with:
         context: ${{ inputs.build_context }}
@@ -225,9 +245,7 @@ runs:
 
     - name: Build only (no push)
       id: build-only
-      if: |
-        !(inputs.ghcr == 'true' && (github.event_name == 'push' || (github.event_name == 'pull_request' && inputs.publish_on_pr == 'true'))) &&
-        !(inputs.google_ar == 'true' && github.event_name == 'push' && github.ref_name == github.event.repository.default_branch)
+      if: steps.setup.outputs.publish_to_ghcr == 'false' && steps.setup.outputs.publish_to_gar == 'false'
       uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83 # v6.18.0
       with:
         context: ${{ inputs.build_context }}

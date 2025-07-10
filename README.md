@@ -85,7 +85,7 @@ jobs:
 | `build_args` | Docker build arguments (multiline) | No | - |
 | `ghcr` | Enable GitHub Container Registry | No | `true` |
 | `ghcr_image_name` | GHCR image name | No | `ghcr.io/{owner}/{image_name}` |
-| `publish_on_pr` | Publish images on pull requests | No | `false` |
+| `publish_on_pr` | Publish images on pull requests (SHA tags only) | No | `false` |
 | `google_ar` | Enable Google Artifact Registry | No | `false` |
 | `google_ar_image_name` | GAR image name | No | - |
 | `google_workload_identity_provider` | Google Workload Identity Provider | No | - |
@@ -97,9 +97,9 @@ jobs:
 
 ### GitHub Container Registry (GHCR)
 
-- **Any push**: Creates SHA-tagged image
-- **Push to default branch**: Creates SHA-tagged + nightly
+- **Push to default branch**: Creates SHA-tagged + nightly images
 - **Pull requests**: Creates SHA-tagged image (if `publish_on_pr: 'true'`)
+- **All other pushes**: No publishing (build-only)
 
 ### Google Artifact Registry (GAR)
 
