@@ -1,5 +1,5 @@
 name: 'Build and Push Container Images'
-description: 'Builds images on PRs and builds/pushes to registries on main/release branches'
+description: 'Builds images on PRs and builds/pushes to registries on default branch'
 
 inputs:
   # Image configuration
@@ -69,8 +69,8 @@ inputs:
     default: ''
 
   # Build configuration
-  architecture:
-    description: 'Architecture to build (e.g., amd64, arm64)'
+  platform:
+    description: 'platform to build (e.g., amd64, arm64)'
     required: false
     default: 'amd64'
 
@@ -101,10 +101,6 @@ outputs:
 runs:
   using: 'composite'
   steps:
-    # =============================================================================
-    # BUILD IMAGES
-    # =============================================================================
-
     - name: Setup build metadata
       id: setup
       shell: bash
@@ -116,20 +112,12 @@ runs:
         fi
         echo "ghcr_image_name=$GHCR_IMAGE_NAME" >> $GITHUB_OUTPUT
 
-        # Use correct SHA for the event type
-        if [[ "${{ github.event_name }}" == "pull_request" ]]; then
-          COMMIT_SHA="${{ github.event.pull_request.head.sha }}"
-        else
-          COMMIT_SHA="${{ github.sha }}"
-        fi
-        echo "commit_sha=$COMMIT_SHA" >> $GITHUB_OUTPUT
         echo "Event: ${{ github.event_name }}"
         echo "Branch: ${{ github.ref_name }}"
-        echo "Architecture: ${{ inputs.architecture }}"
-        echo "Commit SHA: $COMMIT_SHA"
+        echo "platform: ${{ inputs.platform }}"
         if [[ "${{ inputs.google_ar }}" == "true" ]]; then
           if [[ -z "${{ inputs.google_ar_image_name }}" ]]; then
-            echo "Error: Google Artifact Registry image name is required when publshing to Google Artifact Registry is enabled"
+            echo "Error: Google Artifact Registry image name is required when publishing to Google Artifact Registry is enabled"
             exit 1
           fi
           echo "GAR Image: ${{ inputs.google_ar_image_name }}"
@@ -138,68 +126,27 @@ runs:
           echo "GHCR Image: $GHCR_IMAGE_NAME"
         fi
 
-    - name: Build images for each architecture
-      id: build-images
-      shell: bash
-      run: |
-        set -euo pipefail
-
-        ARCHITECTURE="${{ inputs.architecture }}"
-        GHCR_IMAGE_NAME="${{ steps.setup.outputs.ghcr_image_name }}"
-
-        echo "Building for architecture: $ARCHITECTURE"
-
-        # Set platform-specific runner (if needed)
-        PLATFORM="linux/$ARCHITECTURE"
-
-        # Define image tags
-        IMAGE="${GHCR_IMAGE_NAME}:${{ steps.setup.outputs.commit_sha }}"
-        CACHE_IMG="${GHCR_IMAGE_NAME}:${ARCHITECTURE}-${{ inputs.cache_suffix }}"
-
-        # Prepare build arguments
-        BUILD_ARGS=""
-        if [[ -n "${{ inputs.build_args }}" ]]; then
-          while IFS= read -r arg; do
-            if [[ -n "$arg" ]]; then
-              BUILD_ARGS="$BUILD_ARGS --build-arg $arg"
-            fi
-          done <<< "${{ inputs.build_args }}"
-        fi
-
-        # Prepare cache arguments
-        CACHE_ARGS=""
-        if [[ "${{ inputs.cache_enabled }}" == "true" ]]; then
-          if docker pull -q "$CACHE_IMG" 2>/dev/null; then
-            CACHE_ARGS="--cache-from $CACHE_IMG"
-          fi
-        fi
-
-        # Build target argument
-        TARGET_ARG=""
-        if [[ -n "${{ inputs.build_target }}" ]]; then
-          TARGET_ARG="--target ${{ inputs.build_target }}"
-        fi
-
-        # Build the image
-        docker buildx build \
-          --platform "$PLATFORM" \
-          --build-arg BUILDKIT_INLINE_CACHE=1 \
-          $BUILD_ARGS \
-          $CACHE_ARGS \
-          $TARGET_ARG \
-          --tag "$IMAGE" \
-          --tag "$CACHE_IMG" \
-          --file "${{ inputs.dockerfile_path }}" \
-          "${{ inputs.build_context }}"
-
-        # Output built image
-        echo "image=$IMAGE" >> $GITHUB_OUTPUT
-
-        echo "Built image: $IMAGE"
-
-    # =============================================================================
-    # PUBLISH TO GITHUB CONTAINER REGISTRY
-    # =============================================================================
+    - name: Extract metadata for GHCR
+      id: meta-ghcr
+      if: inputs.ghcr == 'true' && (github.event_name == 'push' || (github.event_name == 'pull_request' && inputs.publish_on_pr == 'true'))
+      uses: docker/metadata-action@902fa8ec7d6ecbf8d84d538b9b233a880e428804 # v5.7.0
+      with:
+        images: ${{ steps.setup.outputs.ghcr_image_name }}
+        tags: |
+          # SHA for all events
+          type=sha,format=short
+          # Long SHA for all events
+          type=sha,format=long
+          # Nightly tags only for default branch pushes
+          type=raw,value=nightly,enable={{is_default_branch}}
+        labels: |
+            org.opencontainers.image.title=${{ github.event.repository.name }}
+            org.opencontainers.image.description=${{ github.event.repository.description }}
+            org.opencontainers.image.vendor="Sentry"
+            org.opencontainers.image.revision=${{ github.pull_request.head.sha || github.sha }}
+            org.opencontainers.image.version=${{ github.pull_request.head.sha || github.sha }}
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.url=${{ github.server_url }}/${{ github.repository }}
 
     - name: Login to GitHub Container Registry
       if: inputs.ghcr == 'true' && (github.event_name == 'push' || (github.event_name == 'pull_request' && inputs.publish_on_pr == 'true'))
@@ -207,60 +154,90 @@ runs:
       run: |
         docker login ghcr.io -u "${{ github.actor }}" --password "${{ github.token }}"
 
-    - name: Push and tag image for GHCR
+    - name: Build and push to GHCR
+      id: build-and-push-to-ghcr
       if: inputs.ghcr == 'true' && (github.event_name == 'push' || (github.event_name == 'pull_request' && inputs.publish_on_pr == 'true'))
-      shell: bash
-      run: |
-        GHCR_IMAGE_NAME="${{ steps.setup.outputs.ghcr_image_name }}"
-        IMAGE="${{ steps.build-images.outputs.image }}"
+      uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83 # v6.18.0
+      with:
+        context: ${{ inputs.build_context }}
+        file: ${{ inputs.dockerfile_path }}
+        platforms: linux/${{ inputs.platform }}
+        build-args: ${{ inputs.build_args }}
+        target: ${{ inputs.build_target }}
+        tags: ${{ steps.meta-ghcr.outputs.tags }}
+        labels: ${{ steps.meta-ghcr.outputs.labels }}
+        cache-from: type=gha,scope=${{ matrix.platform }}
+        cache-to: type=gha,mode=max,scope=${{ matrix.platform }}
+        provenance: mode=max
+        sbom: true
+        push: true
 
-        # Create and push SHA-tagged image
-        echo "Creating SHA-tagged image: ${GHCR_IMAGE_NAME}:${{ steps.setup.outputs.commit_sha }}"
-        docker tag "$IMAGE" "${GHCR_IMAGE_NAME}:${{ steps.setup.outputs.commit_sha }}"
-        docker push "${GHCR_IMAGE_NAME}:${{ steps.setup.outputs.commit_sha }}"
+    - name: Extract metadata for GAR
+      id: meta-gar
+      if: inputs.google_ar == 'true' && github.event_name == 'push' && github.ref_name == github.event.repository.default_branch
+      uses: docker/metadata-action@902fa8ec7d6ecbf8d84d538b9b233a880e428804 # v5.7.0
+      with:
+        images: ${{ inputs.google_ar_image_name }}
+        tags: |
+          # SHA for all events
+          type=sha,format=short
+          # Long SHA for all events
+          type=sha,format=long
+        labels: |
+            org.opencontainers.image.title=${{ github.event.repository.name }}
+            org.opencontainers.image.description=${{ github.event.repository.description }}
+            org.opencontainers.image.vendor="Sentry"
+            org.opencontainers.image.revision=${{ github.pull_request.head.sha || github.sha }}
+            org.opencontainers.image.version=${{ github.pull_request.head.sha || github.sha }}
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.url=${{ github.server_url }}/${{ github.repository }}
 
-        # Create and push latest tag only on main/master branches (not PRs)
-        if [[ "${{ github.event_name }}" == "push" && ("${{ github.ref_name }}" == "main" || "${{ github.ref_name }}" == "master") ]]; then
-          echo "Creating latest tag: ${GHCR_IMAGE_NAME}:latest"
-          docker tag "$IMAGE" "${GHCR_IMAGE_NAME}:latest"
-          docker push "${GHCR_IMAGE_NAME}:latest"
-        fi
-
-    # =============================================================================
-    # PUBLISH TO GOOGLE ARTIFACT REGISTRY
-    # =============================================================================
 
     - name: Setup Google Cloud authentication
-      if: inputs.google_ar == 'true' && github.event_name == 'push' && (github.ref_name == 'main' || github.ref_name == 'master')
+      if: inputs.google_ar == 'true' && github.event_name == 'push' && github.ref_name == github.event.repository.default_branch
       uses: google-github-actions/auth@ba79af03959ebeac9769e648f473a284504d9193 # v2.1.10
       with:
         workload_identity_provider: ${{ inputs.google_workload_identity_provider }}
         service_account: ${{ inputs.google_service_account }}
 
-    - name: Setup Google Cloud SDK
-      if: inputs.google_ar == 'true' && github.event_name == 'push' && (github.ref_name == 'main' || github.ref_name == 'master')
-      uses: google-github-actions/setup-gcloud@77e7a554d41e2ee56fc945c52dfd3f33d12def9a # v2.1.4
-      with:
-        version: ">= 390.0.0"
-
     - name: Configure Docker for Google Artifact Registry
-      if: inputs.google_ar == 'true' && github.event_name == 'push' && (github.ref_name == 'main' || github.ref_name == 'master')
+      if: inputs.google_ar == 'true' && github.event_name == 'push' && github.ref_name == github.event.repository.default_branch
       shell: bash
       run: |
-        if [[ -z "${{ inputs.google_ar_image_name }}" ]]; then
-          echo "Error: Google Artifact Registry image name is required when publshing to Google Artifact Registry is enabled"
-          exit 1
-        fi
         gcloud auth configure-docker $(echo "${{ inputs.google_ar_image_name }}" | cut -d'/' -f1)
 
-    - name: Tag image for Google Artifact Registry
-      if: inputs.google_ar == 'true' && github.event_name == 'push' && (github.ref_name == 'main' || github.ref_name == 'master')
-      shell: bash
-      run: |
-        GAR_IMAGE_NAME="${{ inputs.google_ar_image_name }}"
-        IMAGE="${{ steps.build-images.outputs.image }}"
+    - name: Build and push to GAR
+      if: inputs.google_ar == 'true' && inputs.google_ar_image_name != '' && github.event_name == 'push' && github.ref_name == github.event.repository.default_branch
+      uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83 # v6.18.0
+      with:
+        context: ${{ inputs.build_context }}
+        file: ${{ inputs.dockerfile_path }}
+        platforms: linux/${{ inputs.platform }}
+        build-args: ${{ inputs.build_args }}
+        target: ${{ inputs.build_target }}
+        tags: ${{ steps.meta-gar.outputs.tags }}
+        labels: ${{ steps.meta-gar.outputs.labels }}
+        cache-from: type=gha,scope=${{ inputs.platform }}
+        cache-to: type=gha,mode=max,scope=${{ inputs.platform }}
+        provenance: mode=max
+        sbom: true
+        push: true
 
-        # Create and push SHA-tagged image
-        echo "Creating SHA-tagged image: ${GAR_IMAGE_NAME}:${{ inputs.google_ar_tag_prefix }}${{ steps.setup.outputs.commit_sha }}"
-        docker tag "$IMAGE" "${GAR_IMAGE_NAME}:${{ inputs.google_ar_tag_prefix }}${{ steps.setup.outputs.commit_sha }}"
-        docker push "${GAR_IMAGE_NAME}:${{ inputs.google_ar_tag_prefix }}${{ steps.setup.outputs.commit_sha }}"
+    - name: Build only (no push)
+      id: build-only
+      if: |
+        !(inputs.ghcr == 'true' && (github.event_name == 'push' || (github.event_name == 'pull_request' && inputs.publish_on_pr == 'true'))) &&
+        !(inputs.google_ar == 'true' && github.event_name == 'push' && github.ref_name == github.event.repository.default_branch)
+      uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83 # v6.18.0
+      with:
+        context: ${{ inputs.build_context }}
+        file: ${{ inputs.dockerfile_path }}
+        platforms: linux/${{ inputs.platform }}
+        build-args: ${{ inputs.build_args }}
+        target: ${{ inputs.build_target }}
+        tags: build-${{ inputs.image_name }}:${{ github.pull_request.head.sha || github.sha }}
+        cache-from: type=gha,scope=${{ inputs.platform }}
+        cache-to: type=gha,mode=max,scope=${{ inputs.platform }}
+        provenance: mode=max
+        sbom: true
+        push: false

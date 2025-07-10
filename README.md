@@ -66,7 +66,6 @@ jobs:
     # Enable GAR publishing
     google_ar: 'true'
     google_ar_image_name: 'us-central1-docker.pkg.dev/myproject/myrepo/myapp'
-    google_ar_tag_prefix: 'v'  # Optional: prefix for tags (e.g., v1.2.3)
 
     # Authentication (required for GAR)
     google_workload_identity_provider: 'projects/123/locations/global/workloadIdentityPools/pool/providers/provider'
@@ -89,7 +88,6 @@ jobs:
 | `publish_on_pr` | Publish images on pull requests | No | `false` |
 | `google_ar` | Enable Google Artifact Registry | No | `false` |
 | `google_ar_image_name` | GAR image name | No | - |
-| `google_ar_tag_prefix` | GAR tag prefix | No | - |
 | `google_workload_identity_provider` | Google Workload Identity Provider | No | - |
 | `google_service_account` | Google Service Account | No | - |
 | `cache_enabled` | Enable build cache | No | `true` |
@@ -100,10 +98,10 @@ jobs:
 ### GitHub Container Registry (GHCR)
 
 - **Any push**: Creates SHA-tagged image
-- **Push to main/master**: Creates SHA-tagged + latest images
+- **Push to default branch**: Creates SHA-tagged + nightly
 - **Pull requests**: Creates SHA-tagged image (if `publish_on_pr: 'true'`)
 
 ### Google Artifact Registry (GAR)
 
-- **Push to main/master only**: Creates SHA-tagged image
+- **Push to default branch only**: Creates SHA-tagged + nightly
 - **All other events**: No publishing
