@@ -167,11 +167,16 @@ runs:
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
             org.opencontainers.image.url=${{ github.server_url }}/${{ github.repository }}
 
-    - name: Login to GitHub Container Registry
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@b5ca514318bd6ebac0fb2aedd5d36ec1b5c232a2 # v3.10.0
+
+    - name: Login to GHCR
       if: steps.setup.outputs.publish_to_ghcr == 'true'
-      shell: bash
-      run: |
-        docker login ghcr.io -u "${{ github.actor }}" --password "${{ github.token }}"
+      uses: docker/login-action@74a5d142397b4f367a81961eba4e8cd7edddf772 # v3
+      with:
+        registry: ghcr.io
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
 
 
     - name: Setup Google Cloud authentication
