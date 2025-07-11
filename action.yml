@@ -116,11 +116,18 @@ runs:
           PUBLISH_TO_GAR="true"
         fi
 
+        # Determine if we will publish to any registry
+        WILL_PUBLISH="false"
+        if [[ "$PUBLISH_TO_GHCR" == "true" || "$PUBLISH_TO_GAR" == "true" ]]; then
+          WILL_PUBLISH="true"
+        fi
+
         echo "publish_to_ghcr=$PUBLISH_TO_GHCR" >> $GITHUB_OUTPUT
         echo "publish_to_gar=$PUBLISH_TO_GAR" >> $GITHUB_OUTPUT
+        echo "will_publish=$WILL_PUBLISH" >> $GITHUB_OUTPUT
         echo "Publishing to GHCR: $PUBLISH_TO_GHCR"
         echo "Publishing to GAR: $PUBLISH_TO_GAR"
-
+        echo "Will publish to any registry: $WILL_PUBLISH"
 
     - name: Extract metadata for GHCR
       id: meta-ghcr
@@ -130,11 +137,27 @@ runs:
         images: ${{ steps.setup.outputs.ghcr_image_name }}
         tags: |
           # SHA for all events
-          type=sha,format=short
-          # Long SHA for all events
           type=sha,format=long
           # Nightly tags only for default branch pushes
           type=raw,value=nightly,enable={{is_default_branch}}
+        labels: |
+            org.opencontainers.image.title=${{ github.event.repository.name }}
+            org.opencontainers.image.description=${{ github.event.repository.description }}
+            org.opencontainers.image.vendor="Sentry"
+            org.opencontainers.image.revision=${{ github.pull_request.head.sha || github.sha }}
+            org.opencontainers.image.version=${{ github.pull_request.head.sha || github.sha }}
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.url=${{ github.server_url }}/${{ github.repository }}
+
+    - name: Extract metadata for GAR
+      id: meta-gar
+      if: steps.setup.outputs.publish_to_gar == 'true'
+      uses: docker/metadata-action@902fa8ec7d6ecbf8d84d538b9b233a880e428804 # v5.7.0
+      with:
+        images: ${{ inputs.google_ar_image_name }}
+        tags: |
+          # SHA for all events (no nightly for GAR)
+          type=sha,format=long
         labels: |
             org.opencontainers.image.title=${{ github.event.repository.name }}
             org.opencontainers.image.description=${{ github.event.repository.description }}
@@ -150,44 +173,6 @@ runs:
       run: |
         docker login ghcr.io -u "${{ github.actor }}" --password "${{ github.token }}"
 
-    - name: Build and push to GHCR
-      id: build-and-push-to-ghcr
-      if: steps.setup.outputs.publish_to_ghcr == 'true'
-      uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83 # v6.18.0
-      with:
-        context: ${{ inputs.build_context }}
-        file: ${{ inputs.dockerfile_path }}
-        platforms: linux/${{ inputs.platform }}
-        build-args: ${{ inputs.build_args }}
-        target: ${{ inputs.build_target }}
-        tags: ${{ steps.meta-ghcr.outputs.tags }}
-        labels: ${{ steps.meta-ghcr.outputs.labels }}
-        cache-from: type=gha,scope=${{ inputs.platform }}
-        cache-to: type=gha,mode=max,scope=${{ inputs.platform }}
-        provenance: mode=max
-        sbom: true
-        push: true
-
-    - name: Extract metadata for GAR
-      id: meta-gar
-      if: steps.setup.outputs.publish_to_gar == 'true'
-      uses: docker/metadata-action@902fa8ec7d6ecbf8d84d538b9b233a880e428804 # v5.7.0
-      with:
-        images: ${{ inputs.google_ar_image_name }}
-        tags: |
-          # SHA for all events
-          type=sha,format=short
-          # Long SHA for all events
-          type=sha,format=long
-        labels: |
-            org.opencontainers.image.title=${{ github.event.repository.name }}
-            org.opencontainers.image.description=${{ github.event.repository.description }}
-            org.opencontainers.image.vendor="Sentry"
-            org.opencontainers.image.revision=${{ github.pull_request.head.sha || github.sha }}
-            org.opencontainers.image.version=${{ github.pull_request.head.sha || github.sha }}
-            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
-            org.opencontainers.image.url=${{ github.server_url }}/${{ github.repository }}
-
 
     - name: Setup Google Cloud authentication
       if: steps.setup.outputs.publish_to_gar == 'true'
@@ -202,8 +187,8 @@ runs:
       run: |
         gcloud auth configure-docker $(echo "${{ inputs.google_ar_image_name }}" | cut -d'/' -f1)
 
-    - name: Build and push to GAR
-      if: steps.setup.outputs.publish_to_gar == 'true'
+    - name: Build and push
+      id: build-and-push
       uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83 # v6.18.0
       with:
         context: ${{ inputs.build_context }}
@@ -211,27 +196,14 @@ runs:
         platforms: linux/${{ inputs.platform }}
         build-args: ${{ inputs.build_args }}
         target: ${{ inputs.build_target }}
-        tags: ${{ steps.meta-gar.outputs.tags }}
-        labels: ${{ steps.meta-gar.outputs.labels }}
+        tags: |
+          ${{ steps.setup.outputs.publish_to_ghcr == 'true' && steps.meta-ghcr.outputs.tags || '' }}
+          ${{ steps.setup.outputs.publish_to_gar == 'true' && steps.meta-gar.outputs.tags || '' }}
+          ${{ steps.setup.outputs.will_publish == 'false' && format('build-{0}:{1}', inputs.image_name, github.pull_request.head.sha || github.sha) || '' }}
+        labels: ${{ (steps.setup.outputs.publish_to_ghcr == 'true' && steps.meta-ghcr.outputs.labels) || (steps.setup.outputs.publish_to_gar == 'true' && steps.meta-gar.outputs.labels) || '' }}
+        annotations: ${{ (steps.setup.outputs.publish_to_ghcr == 'true' && steps.meta-ghcr.outputs.annotations) || (steps.setup.outputs.publish_to_gar == 'true' && steps.meta-gar.outputs.annotations) || '' }}
         cache-from: type=gha,scope=${{ inputs.platform }}
-        cache-to: type=gha,mode=max,scope=${{ inputs.platform }}
-        provenance: mode=max
-        sbom: true
-        push: true
-
-    - name: Build only (no push)
-      id: build-only
-      if: steps.setup.outputs.publish_to_ghcr == 'false' && steps.setup.outputs.publish_to_gar == 'false'
-      uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83 # v6.18.0
-      with:
-        context: ${{ inputs.build_context }}
-        file: ${{ inputs.dockerfile_path }}
-        platforms: linux/${{ inputs.platform }}
-        build-args: ${{ inputs.build_args }}
-        target: ${{ inputs.build_target }}
-        tags: build-${{ inputs.image_name }}:${{ github.pull_request.head.sha || github.sha }}
-        cache-from: type=gha,scope=${{ inputs.platform }}
-        cache-to: type=gha,mode=max,scope=${{ inputs.platform }}
-        provenance: mode=max
-        sbom: true
-        push: false
+        cache-to: ${{ steps.setup.outputs.will_publish == 'true' && format('type=gha,mode=max,scope={0}', inputs.platform) || '' }}
+        provenance: ${{ steps.setup.outputs.will_publish == 'true' && 'mode=max' || 'false' }}
+        sbom: ${{ steps.setup.outputs.will_publish == 'true' }}
+        push: ${{ steps.setup.outputs.will_publish == 'true' }}

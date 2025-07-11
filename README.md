@@ -7,6 +7,23 @@ This is a composite GitHub action that builds and publishes images to
 
 ## Usage
 
+**Required Permissions**
+Add the following permissions block to your workflow to allow publishing to GHCR and/or GAR:
+```yaml
+permissions:
+  contents: read
+  packages: write      # Required for GHCR
+  id-token: write      # Required for Google Artifact Registry (GAR)
+```
+If you're just building, `packages` should be set to `read` and `id-token` should be omitted.`
+```yaml
+permissions:
+  contents: read
+  packages: read      # Required to read from GHCR if using as cache
+  # id-token is omitted here
+```
+> Adjust permissions as needed for your use case. See [GitHub Actions permissions docs](https://docs.github.com/en/actions/using-jobs/assigning-permissions-to-jobs) for more details.
+
 ### Basic Usage
 
 ```yaml
@@ -14,7 +31,7 @@ This is a composite GitHub action that builds and publishes images to
   uses: getsentry/action-build-and-push-images@sha
   with:
     image_name: 'sentry'
-    architecture: 'amd64'
+    platform: 'amd64'
 ```
 
 ### Multi-Architecture with Matrix Strategy
@@ -25,9 +42,9 @@ jobs:
     strategy:
       matrix:
         include:
-          - architecture: amd64
+          - platform: amd64
             runner: ubuntu-latest
-          - architecture: arm64
+          - platform: arm64
             runner: ubuntu-latest-arm64
     runs-on: ${{ matrix.runner }}
     steps:
@@ -35,7 +52,7 @@ jobs:
         uses: getsentry/action-build-and-push-images@sha
         with:
           image_name: 'sentry'
-          architecture: ${{ matrix.architecture }}
+          platform: ${{ matrix.platform }}
 ```
 
 ### With Custom Build Configuration
@@ -45,7 +62,7 @@ jobs:
   uses: getsentry/action-build-and-push-images@sha
   with:
     image_name: 'sentry'
-    architecture: 'amd64'
+    platform: 'amd64'
     dockerfile_path: './docker/Dockerfile'
     build_context: './src'
     build_target: 'production'
@@ -61,7 +78,7 @@ jobs:
   uses: getsentry/action-build-and-push-images@sha
   with:
     image_name: 'sentry'
-    architecture: 'amd64'
+    platform: 'amd64'
 
     # Enable GAR publishing
     google_ar: 'true'
@@ -78,7 +95,7 @@ jobs:
 | Input | Description | Required | Default |
 |-------|-------------|----------|---------|
 | `image_name` | Base image name | Yes | - |
-| `architecture` | Architecture to build (amd64, arm64) | No | `amd64` |
+| `platform` | Platform to build (amd64, arm64) | No | `amd64` |
 | `dockerfile_path` | Path to Dockerfile | No | `./Dockerfile` |
 | `build_context` | Build context directory | No | `.` |
 | `build_target` | Docker build target stage | No | - |
@@ -90,8 +107,6 @@ jobs:
 | `google_ar_image_name` | GAR image name | No | - |
 | `google_workload_identity_provider` | Google Workload Identity Provider | No | - |
 | `google_service_account` | Google Service Account | No | - |
-| `cache_enabled` | Enable build cache | No | `true` |
-| `cache_suffix` | Cache image suffix | No | `cache` |
 
 ## Publishing Behavior
 
@@ -103,5 +118,5 @@ jobs:
 
 ### Google Artifact Registry (GAR)
 
-- **Push to default branch only**: Creates SHA-tagged + nightly
+- **Push to default branch only**: Creates SHA-tagged images (no nightly)
 - **All other events**: No publishing
