@@ -204,7 +204,6 @@ runs:
         tags: |
           ${{ steps.setup.outputs.publish_to_ghcr == 'true' && steps.meta-ghcr.outputs.tags || '' }}
           ${{ steps.setup.outputs.publish_to_gar == 'true' && steps.meta-gar.outputs.tags || '' }}
-          ${{ steps.setup.outputs.will_publish == 'false' && format('build-{0}:{1}', inputs.image_name, github.pull_request.head.sha || github.sha) || '' }}
         labels: ${{ (steps.setup.outputs.publish_to_ghcr == 'true' && steps.meta-ghcr.outputs.labels) || (steps.setup.outputs.publish_to_gar == 'true' && steps.meta-gar.outputs.labels) || '' }}
         annotations: ${{ (steps.setup.outputs.publish_to_ghcr == 'true' && steps.meta-ghcr.outputs.annotations) || (steps.setup.outputs.publish_to_gar == 'true' && steps.meta-gar.outputs.annotations) || '' }}
         cache-from: type=gha,scope=${{ inputs.platform }}
