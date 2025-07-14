@@ -79,6 +79,16 @@ inputs:
     required: false
     default: 'amd64'
 
+
+outputs:
+  ghcr_image_url:
+    description: 'Full GHCR image URL with primary tag (e.g., ghcr.io/owner/repo:sha-abc123)'
+    value: ${{ steps.output-urls.outputs.ghcr_image_url }}
+
+  gar_image_url:
+    description: 'Full GAR image URL with primary tag'
+    value: ${{ steps.output-urls.outputs.gar_image_url }}
+
 runs:
   using: 'composite'
   steps:
@@ -216,3 +226,22 @@ runs:
         provenance: ${{ steps.setup.outputs.will_publish == 'true' && 'mode=max' || 'false' }}
         sbom: ${{ steps.setup.outputs.will_publish == 'true' }}
         push: ${{ steps.setup.outputs.will_publish == 'true' }}
+
+    - name: Output image URLs
+      id: output-urls
+      shell: bash
+      run: |
+        set -e
+
+        primary_ghcr_tag=$(echo ${{ steps.meta-ghcr.outputs.tags }} | head -n1)
+        primary_gar_tag=$(echo ${{ steps.meta-gar.outputs.tags }} | head -n1)
+
+        ghcr_image_url=${{ steps.output-urls.outputs.ghcr_image_url }}:${{ primary_ghcr_tag }}
+        gar_image_url=${{ steps.output-urls.outputs.gar_image_url }}:${{ primary_gar_tag }}
+
+        # Output to GitHub Actions
+        echo "ghcr_image_url=$ghcr_image_url" >> $GITHUB_OUTPUT
+        echo "gar_image_url=$gar_image_url" >> $GITHUB_OUTPUT
+
+        echo "ghcr_image_url=$ghcr_image_url"
+        echo "gar_image_url=$gar_image_url"
