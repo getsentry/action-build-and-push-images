@@ -53,8 +53,13 @@ inputs:
     required: false
     default: ''
 
-  google_ar_tag_prefix:
-    description: 'Google Artifact Registry latest tag'
+  tag_prefix:
+    description: 'Tag prefix'
+    required: false
+    default: ''
+
+  tag_suffix:
+    description: 'Tag suffix'
     required: false
     default: ''
 
@@ -137,7 +142,7 @@ runs:
         images: ${{ steps.setup.outputs.ghcr_image_name }}
         tags: |
           # SHA for all events
-          type=sha,format=long
+          type=sha,format=long,prefix=${{ inputs.tag_prefix }},suffix=${{ inputs.tag_suffix }}
           # Nightly tags only for default branch pushes
           type=raw,value=nightly,enable={{is_default_branch}}
         labels: |
@@ -157,7 +162,7 @@ runs:
         images: ${{ inputs.google_ar_image_name }}
         tags: |
           # SHA for all events (no nightly for GAR)
-          type=sha,format=long
+          type=sha,format=long,prefix=${{ inputs.tag_prefix }},suffix=${{ inputs.tag_suffix }}
         labels: |
             org.opencontainers.image.title=${{ github.event.repository.name }}
             org.opencontainers.image.description=${{ github.event.repository.description }}
