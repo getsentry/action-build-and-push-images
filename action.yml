@@ -229,8 +229,8 @@ runs:
           ${{ steps.setup.outputs.publish_to_gar == 'true' && steps.meta-gar.outputs.tags || '' }}
         labels: ${{ (steps.setup.outputs.publish_to_ghcr == 'true' && steps.meta-ghcr.outputs.labels) || (steps.setup.outputs.publish_to_gar == 'true' && steps.meta-gar.outputs.labels) || '' }}
         annotations: ${{ (steps.setup.outputs.publish_to_ghcr == 'true' && steps.meta-ghcr.outputs.annotations) || (steps.setup.outputs.publish_to_gar == 'true' && steps.meta-gar.outputs.annotations) || '' }}
-        cache-from: type=gha,scope=${{ inputs.platforms }}
-        cache-to: ${{ steps.setup.outputs.will_publish == 'true' && format('type=gha,mode=max,scope={0}', inputs.platforms) || '' }}
+        cache-from: type=gha,scope=buildcache
+        cache-to: ${{ steps.setup.outputs.will_publish == 'true' && 'type=gha,mode=max,scope=buildcache' || '' }}
         provenance: ${{ steps.setup.outputs.will_publish == 'true' && 'mode=max' || 'false' }}
         sbom: ${{ steps.setup.outputs.will_publish == 'true' }}
         push: ${{ steps.setup.outputs.will_publish == 'true' }}
