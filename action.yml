@@ -144,6 +144,15 @@ runs:
         echo "Publishing to GAR: $PUBLISH_TO_GAR"
         echo "Will publish to any registry: $WILL_PUBLISH"
 
+        # Determine the correct commit SHA based on event type
+        if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+          COMMIT_SHA="${{ github.event.pull_request.head.sha }}"
+        else
+          COMMIT_SHA="${{ github.sha }}"
+        fi
+        echo "commit_sha=$COMMIT_SHA" >> $GITHUB_OUTPUT
+        echo "Using commit SHA: $COMMIT_SHA"
+
     - name: Extract metadata for GHCR
       id: meta-ghcr
       if: steps.setup.outputs.publish_to_ghcr == 'true'
@@ -152,15 +161,15 @@ runs:
         images: ${{ steps.setup.outputs.ghcr_image_name }}
         tags: |
           # SHA for all events
-          type=sha,format=long,prefix=${{ inputs.tag_prefix }},suffix=${{ inputs.tag_suffix }}
+          type=sha,value=${{ steps.setup.outputs.commit_sha }},format=long,prefix=${{ inputs.tag_prefix }},suffix=${{ inputs.tag_suffix }}
           # Nightly tags only for default branch pushes
           type=raw,value=nightly,enable={{is_default_branch}}
         labels: |
             org.opencontainers.image.title=${{ github.event.repository.name }}
             org.opencontainers.image.description=${{ github.event.repository.description }}
             org.opencontainers.image.vendor="Sentry"
-            org.opencontainers.image.revision=${{ github.event.pull_request.head.sha || github.sha }}
-            org.opencontainers.image.version=${{ github.event.pull_request.head.sha || github.sha }}
+            org.opencontainers.image.revision=${{ steps.setup.outputs.commit_sha }}
+            org.opencontainers.image.version=${{ steps.setup.outputs.commit_sha }}
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
             org.opencontainers.image.url=${{ github.server_url }}/${{ github.repository }}
 
@@ -172,13 +181,13 @@ runs:
         images: ${{ inputs.google_ar_image_name }}
         tags: |
           # SHA for all events (no nightly for GAR)
-          type=sha,format=long,prefix=${{ inputs.tag_prefix }},suffix=${{ inputs.tag_suffix }}
+          type=sha,value=${{ steps.setup.outputs.commit_sha }},format=long,prefix=${{ inputs.tag_prefix }},suffix=${{ inputs.tag_suffix }}
         labels: |
             org.opencontainers.image.title=${{ github.event.repository.name }}
             org.opencontainers.image.description=${{ github.event.repository.description }}
             org.opencontainers.image.vendor="Sentry"
-            org.opencontainers.image.revision=${{ github.event.pull_request.head.sha || github.sha }}
-            org.opencontainers.image.version=${{ github.event.pull_request.head.sha || github.sha }}
+            org.opencontainers.image.revision=${{ steps.setup.outputs.commit_sha }}
+            org.opencontainers.image.version=${{ steps.setup.outputs.commit_sha }}
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
             org.opencontainers.image.url=${{ github.server_url }}/${{ github.repository }}
 
