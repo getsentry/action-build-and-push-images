@@ -159,8 +159,8 @@ runs:
             org.opencontainers.image.title=${{ github.event.repository.name }}
             org.opencontainers.image.description=${{ github.event.repository.description }}
             org.opencontainers.image.vendor="Sentry"
-            org.opencontainers.image.revision=${{ github.pull_request.head.sha || github.sha }}
-            org.opencontainers.image.version=${{ github.pull_request.head.sha || github.sha }}
+            org.opencontainers.image.revision=${{ github.event.pull_request.head.sha || github.sha }}
+            org.opencontainers.image.version=${{ github.event.pull_request.head.sha || github.sha }}
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
             org.opencontainers.image.url=${{ github.server_url }}/${{ github.repository }}
 
@@ -177,8 +177,8 @@ runs:
             org.opencontainers.image.title=${{ github.event.repository.name }}
             org.opencontainers.image.description=${{ github.event.repository.description }}
             org.opencontainers.image.vendor="Sentry"
-            org.opencontainers.image.revision=${{ github.pull_request.head.sha || github.sha }}
-            org.opencontainers.image.version=${{ github.pull_request.head.sha || github.sha }}
+            org.opencontainers.image.revision=${{ github.event.pull_request.head.sha || github.sha }}
+            org.opencontainers.image.version=${{ github.event.pull_request.head.sha || github.sha }}
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
             org.opencontainers.image.url=${{ github.server_url }}/${{ github.repository }}
 
