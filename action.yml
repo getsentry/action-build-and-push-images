@@ -1,0 +1,265 @@
+name: 'Build and Push Container Images'
+description: 'Builds images on PRs and builds/pushes to registries on default branch'
+
+inputs:
+  # Image configuration
+  image_name:
+    description: 'Base image name (e.g., myorg/myapp)'
+    required: true
+
+  dockerfile_path:
+    description: 'Path to Dockerfile'
+    required: false
+    default: './Dockerfile'
+
+  build_context:
+    description: 'Build context directory'
+    required: false
+    default: '.'
+
+  build_target:
+    description: 'Docker build target stage'
+    required: false
+    default: ''
+
+  build_args:
+    description: 'Docker build arguments (multiline)'
+    required: false
+    default: ''
+
+  # Registry configuration
+  ghcr:
+    description: 'Enable GitHub Container Registry'
+    required: false
+    default: 'true'
+
+  ghcr_image_name:
+    description: 'GHCR image name (defaults to ghcr.io/{owner}/{image_name})'
+    required: false
+    default: ''
+
+  publish_on_pr:
+    description: 'Publish images on pull requests (SHA tags only)'
+    required: false
+    default: 'false'
+
+  google_ar:
+    description: 'Enable Google Artifact Registry'
+    required: false
+    default: 'false'
+
+  google_ar_image_name:
+    description: 'Google Artifact Registry image name'
+    required: false
+    default: ''
+
+  tag_prefix:
+    description: 'Tag prefix'
+    required: false
+    default: ''
+
+  tag_suffix:
+    description: 'Tag suffix'
+    required: false
+    default: ''
+
+  google_workload_identity_provider:
+    description: 'Google Workload Identity Provider'
+    required: false
+    default: ''
+
+  google_service_account:
+    description: 'Google Service Account'
+    required: false
+    default: ''
+
+  # Build configuration
+  platforms:
+    description: 'platforms to build (e.g., linux/amd64, linux/arm64)'
+    required: false
+    default: 'linux/amd64'
+
+
+outputs:
+  ghcr_image_url:
+    description: 'Full GHCR image URL with primary tag (e.g., ghcr.io/owner/repo:sha-abc123)'
+    value: ${{ steps.output-urls.outputs.ghcr_image_url }}
+
+  gar_image_url:
+    description: 'Full GAR image URL with primary tag'
+    value: ${{ steps.output-urls.outputs.gar_image_url }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Setup build metadata
+      id: setup
+      shell: bash
+      run: |
+        # Setup image names
+        GHCR_IMAGE_NAME="${{ inputs.ghcr_image_name }}"
+        if [[ -z "$GHCR_IMAGE_NAME" ]]; then
+          GHCR_IMAGE_NAME="ghcr.io/${{ github.repository_owner }}/${{ inputs.image_name }}"
+        fi
+        echo "ghcr_image_name=$GHCR_IMAGE_NAME" >> $GITHUB_OUTPUT
+
+        echo "Event: ${{ github.event_name }}"
+        echo "Branch: ${{ github.ref_name }}"
+        echo "platforms: ${{ inputs.platforms }}"
+        if [[ "${{ inputs.google_ar }}" == "true" ]]; then
+          if [[ -z "${{ inputs.google_ar_image_name }}" ]]; then
+            echo "Error: Google Artifact Registry image name is required when publishing to Google Artifact Registry is enabled"
+            exit 1
+          fi
+          echo "GAR Image: ${{ inputs.google_ar_image_name }}"
+        fi
+        if [[ "${{ inputs.ghcr }}" == "true" ]]; then
+          echo "GHCR Image: $GHCR_IMAGE_NAME"
+        fi
+
+        # Determine publishing conditions
+        PUBLISH_TO_GHCR="false"
+        PUBLISH_TO_GAR="false"
+
+        # GHCR: Publish on default branch push OR PR (if enabled)
+        if [[ "${{ inputs.ghcr }}" == "true" && (("${{ github.event_name }}" == "push" && "${{ github.ref_name }}" == "${{ github.event.repository.default_branch }}") || ("${{ github.event_name }}" == "pull_request" && "${{ inputs.publish_on_pr }}" == "true")) ]]; then
+          PUBLISH_TO_GHCR="true"
+        fi
+
+        # GAR: Publish on default branch push only
+        if [[ "${{ inputs.google_ar }}" == "true" && "${{ github.event_name }}" == "push" && "${{ github.ref_name }}" == "${{ github.event.repository.default_branch }}" ]]; then
+          PUBLISH_TO_GAR="true"
+        fi
+
+        # Determine if we will publish to any registry
+        WILL_PUBLISH="false"
+        if [[ "$PUBLISH_TO_GHCR" == "true" || "$PUBLISH_TO_GAR" == "true" ]]; then
+          WILL_PUBLISH="true"
+        fi
+
+        echo "publish_to_ghcr=$PUBLISH_TO_GHCR" >> $GITHUB_OUTPUT
+        echo "publish_to_gar=$PUBLISH_TO_GAR" >> $GITHUB_OUTPUT
+        echo "will_publish=$WILL_PUBLISH" >> $GITHUB_OUTPUT
+        echo "Publishing to GHCR: $PUBLISH_TO_GHCR"
+        echo "Publishing to GAR: $PUBLISH_TO_GAR"
+        echo "Will publish to any registry: $WILL_PUBLISH"
+
+        # Determine the correct commit SHA based on event type
+        if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+          COMMIT_SHA="${{ github.event.pull_request.head.sha }}"
+        else
+          COMMIT_SHA="${{ github.sha }}"
+        fi
+        echo "commit_sha=$COMMIT_SHA" >> $GITHUB_OUTPUT
+        echo "Using commit SHA: $COMMIT_SHA"
+
+    - name: Set up qemu
+      uses: docker/setup-qemu-action@29109295f81e9208d7d86ff1c6c12d2833863392 #v3.6.0
+      with:
+        platforms: ${{ inputs.platforms }}
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@b5ca514318bd6ebac0fb2aedd5d36ec1b5c232a2 # v3.10.0
+      with:
+        platforms: ${{ inputs.platforms }}
+
+
+    - name: Login to GHCR
+      if: steps.setup.outputs.publish_to_ghcr == 'true'
+      uses: docker/login-action@74a5d142397b4f367a81961eba4e8cd7edddf772 # v3
+      with:
+        registry: ghcr.io
+        username: ${{ github.actor }}
+        password: ${{ github.token }}
+
+
+    - name: Setup Google Cloud authentication
+      if: steps.setup.outputs.publish_to_gar == 'true'
+      uses: google-github-actions/auth@ba79af03959ebeac9769e648f473a284504d9193 # v2.1.10
+      with:
+        workload_identity_provider: ${{ inputs.google_workload_identity_provider }}
+        service_account: ${{ inputs.google_service_account }}
+
+    - name: Configure Docker for Google Artifact Registry
+      if: steps.setup.outputs.publish_to_gar == 'true'
+      shell: bash
+      run: |
+        gcloud auth configure-docker $(echo "${{ inputs.google_ar_image_name }}" | cut -d'/' -f1)
+
+    - name: Extract metadata for GHCR
+      id: meta-ghcr
+      if: steps.setup.outputs.publish_to_ghcr == 'true'
+      uses: docker/metadata-action@902fa8ec7d6ecbf8d84d538b9b233a880e428804 # v5.7.0
+      with:
+        images: ${{ steps.setup.outputs.ghcr_image_name }}
+        tags: |
+          # SHA for all events
+          # Priority for sha tags is 2000, so it will be the highest priority. https://github.com/docker/metadata-action?tab=readme-ov-file#priority-attribute
+          type=raw,value=${{ steps.setup.outputs.commit_sha }},prefix=${{ inputs.tag_prefix }},suffix=${{ inputs.tag_suffix }},priority=2000
+          # Nightly tags only for default branch pushes
+          type=schedule,pattern=nightly,enable={{is_default_branch}}
+        labels: |
+            org.opencontainers.image.title=${{ github.event.repository.name }}
+            org.opencontainers.image.description=${{ github.event.repository.description }}
+            org.opencontainers.image.vendor="Sentry"
+            org.opencontainers.image.revision=${{ steps.setup.outputs.commit_sha }}
+            org.opencontainers.image.version=${{ steps.setup.outputs.commit_sha }}
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.url=${{ github.server_url }}/${{ github.repository }}
+
+    - name: Extract metadata for GAR
+      id: meta-gar
+      if: steps.setup.outputs.publish_to_gar == 'true'
+      uses: docker/metadata-action@902fa8ec7d6ecbf8d84d538b9b233a880e428804 # v5.7.0
+      with:
+        images: ${{ inputs.google_ar_image_name }}
+        tags: |
+          # SHA for all events (no nightly for GAR)
+          type=raw,value=${{ steps.setup.outputs.commit_sha }},prefix=${{ inputs.tag_prefix }},suffix=${{ inputs.tag_suffix }},priority=2000
+        labels: |
+            org.opencontainers.image.title=${{ github.event.repository.name }}
+            org.opencontainers.image.description=${{ github.event.repository.description }}
+            org.opencontainers.image.vendor="Sentry"
+            org.opencontainers.image.revision=${{ steps.setup.outputs.commit_sha }}
+            org.opencontainers.image.version=${{ steps.setup.outputs.commit_sha }}
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.url=${{ github.server_url }}/${{ github.repository }}
+
+    - name: Build and push
+      id: build-and-push
+      uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83 # v6.18.0
+      with:
+        context: ${{ inputs.build_context }}
+        file: ${{ inputs.dockerfile_path }}
+        platforms: ${{ inputs.platforms }}
+        build-args: ${{ inputs.build_args }}
+        target: ${{ inputs.build_target }}
+        tags: |
+          ${{ steps.setup.outputs.publish_to_ghcr == 'true' && steps.meta-ghcr.outputs.tags || '' }}
+          ${{ steps.setup.outputs.publish_to_gar == 'true' && steps.meta-gar.outputs.tags || '' }}
+        labels: ${{ (steps.setup.outputs.publish_to_ghcr == 'true' && steps.meta-ghcr.outputs.labels) || (steps.setup.outputs.publish_to_gar == 'true' && steps.meta-gar.outputs.labels) || '' }}
+        annotations: ${{ (steps.setup.outputs.publish_to_ghcr == 'true' && steps.meta-ghcr.outputs.annotations) || (steps.setup.outputs.publish_to_gar == 'true' && steps.meta-gar.outputs.annotations) || '' }}
+        cache-from: type=gha,scope=buildcache
+        cache-to: ${{ steps.setup.outputs.will_publish == 'true' && 'type=gha,mode=max,scope=buildcache' || '' }}
+        provenance: ${{ steps.setup.outputs.will_publish == 'true' && 'mode=max' || 'false' }}
+        sbom: ${{ steps.setup.outputs.will_publish == 'true' }}
+        push: ${{ steps.setup.outputs.will_publish == 'true' }}
+
+    - name: Output image URLs
+      id: output-urls
+      shell: bash
+      run: |
+        set -e
+
+        primary_ghcr_tag=$(echo ${{ steps.meta-ghcr.outputs.tags }} | head -n1)
+        primary_gar_tag=$(echo ${{ steps.meta-gar.outputs.tags }} | head -n1)
+
+        ghcr_image_url=${{ steps.output-urls.outputs.ghcr_image_url }}:$primary_ghcr_tag
+        gar_image_url=${{ steps.output-urls.outputs.gar_image_url }}:$primary_gar_tag
+
+        # Output to GitHub Actions
+        echo "ghcr_image_url=$ghcr_image_url" >> $GITHUB_OUTPUT
+        echo "gar_image_url=$gar_image_url" >> $GITHUB_OUTPUT
+
+        echo "GHCR Image URL: $ghcr_image_url"
+        echo "GAR Image URL: $gar_image_url"
