@@ -153,6 +153,39 @@ runs:
         echo "commit_sha=$COMMIT_SHA" >> $GITHUB_OUTPUT
         echo "Using commit SHA: $COMMIT_SHA"
 
+    - name: Set up qemu
+      uses: docker/setup-qemu-action@29109295f81e9208d7d86ff1c6c12d2833863392 #v3.6.0
+      with:
+        platforms: ${{ inputs.platforms }}
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@b5ca514318bd6ebac0fb2aedd5d36ec1b5c232a2 # v3.10.0
+      with:
+        platforms: ${{ inputs.platforms }}
+
+
+    - name: Login to GHCR
+      if: steps.setup.outputs.publish_to_ghcr == 'true'
+      uses: docker/login-action@74a5d142397b4f367a81961eba4e8cd7edddf772 # v3
+      with:
+        registry: ghcr.io
+        username: ${{ github.actor }}
+        password: ${{ github.token }}
+
+
+    - name: Setup Google Cloud authentication
+      if: steps.setup.outputs.publish_to_gar == 'true'
+      uses: google-github-actions/auth@ba79af03959ebeac9769e648f473a284504d9193 # v2.1.10
+      with:
+        workload_identity_provider: ${{ inputs.google_workload_identity_provider }}
+        service_account: ${{ inputs.google_service_account }}
+
+    - name: Configure Docker for Google Artifact Registry
+      if: steps.setup.outputs.publish_to_gar == 'true'
+      shell: bash
+      run: |
+        gcloud auth configure-docker $(echo "${{ inputs.google_ar_image_name }}" | cut -d'/' -f1)
+
     - name: Extract metadata for GHCR
       id: meta-ghcr
       if: steps.setup.outputs.publish_to_ghcr == 'true'
@@ -191,39 +224,6 @@ runs:
             org.opencontainers.image.version=${{ steps.setup.outputs.commit_sha }}
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
             org.opencontainers.image.url=${{ github.server_url }}/${{ github.repository }}
-
-    - name: Set up qemu
-      uses: docker/setup-qemu-action@29109295f81e9208d7d86ff1c6c12d2833863392 #v3.6.0
-      with:
-        platforms: ${{ inputs.platforms }}
-
-    - name: Set up Docker Buildx
-      uses: docker/setup-buildx-action@b5ca514318bd6ebac0fb2aedd5d36ec1b5c232a2 # v3.10.0
-      with:
-        platforms: ${{ inputs.platforms }}
-
-
-    - name: Login to GHCR
-      if: steps.setup.outputs.publish_to_ghcr == 'true'
-      uses: docker/login-action@74a5d142397b4f367a81961eba4e8cd7edddf772 # v3
-      with:
-        registry: ghcr.io
-        username: ${{ github.actor }}
-        password: ${{ github.token }}
-
-
-    - name: Setup Google Cloud authentication
-      if: steps.setup.outputs.publish_to_gar == 'true'
-      uses: google-github-actions/auth@ba79af03959ebeac9769e648f473a284504d9193 # v2.1.10
-      with:
-        workload_identity_provider: ${{ inputs.google_workload_identity_provider }}
-        service_account: ${{ inputs.google_service_account }}
-
-    - name: Configure Docker for Google Artifact Registry
-      if: steps.setup.outputs.publish_to_gar == 'true'
-      shell: bash
-      run: |
-        gcloud auth configure-docker $(echo "${{ inputs.google_ar_image_name }}" | cut -d'/' -f1)
 
     - name: Build and push
       id: build-and-push
