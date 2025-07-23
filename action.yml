@@ -127,7 +127,7 @@ runs:
         fi
 
         # GAR: Publish on default branch push only
-        if [[ "${{ inputs.google_ar }}" == "true" && "${{ github.event_name }}" == "push" && "${{ github.ref_name }}" == "${{ github.event.repository.default_branch }}" ]]; then
+        if [[ "${{ inputs.google_ar }}" == "true" && "${{ github.event_name }}" == "push" && "${{ github.ref_name }}" == "${{ github.event.repository.default_branch }}" || ("${{ github.event_name }}" == "pull_request" && "${{ inputs.publish_on_pr }}" == "true")) ]]; then
           PUBLISH_TO_GAR="true"
         fi
 
@@ -216,6 +216,7 @@ runs:
         tags: |
           # SHA for all events (no nightly for GAR)
           type=raw,value=${{ steps.setup.outputs.commit_sha }},prefix=${{ inputs.tag_prefix }},suffix=${{ inputs.tag_suffix }},priority=2000
+          type=raw,value=latest
         labels: |
             org.opencontainers.image.title=${{ github.event.repository.name }}
             org.opencontainers.image.description=${{ github.event.repository.description }}
