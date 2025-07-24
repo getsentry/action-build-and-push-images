@@ -216,7 +216,7 @@ runs:
         tags: |
           # SHA for all events (no nightly for GAR)
           type=raw,value=${{ steps.setup.outputs.commit_sha }},prefix=${{ inputs.tag_prefix }},suffix=${{ inputs.tag_suffix }},priority=2000
-          type=raw,value=latest
+          # type=raw,value=latest
         labels: |
             org.opencontainers.image.title=${{ github.event.repository.name }}
             org.opencontainers.image.description=${{ github.event.repository.description }}
