@@ -245,6 +245,23 @@ runs:
         sbom: ${{ steps.setup.outputs.will_publish == 'true' }}
         push: ${{ steps.setup.outputs.will_publish == 'true' }}
 
+    - name: Generate Scout SBOM
+      id: generate-scout-sbom
+      if: steps.setup.outputs.will_publish == 'true'
+      uses: docker/scout-action@v1
+      with:
+        command: sbom
+        image: ${{ steps.meta-ghcr.outputs.tags}}
+        format: cyclonedx
+        output: sbom.cyclonedx.json
+    
+    - name: Upload SBOM
+    
+      uses: actions/upload-artifact@v4
+      with:
+        name: scout-sbom
+        path: sbom.cyclonedx.json
+
     - name: Output image URLs
       id: output-urls
       shell: bash
