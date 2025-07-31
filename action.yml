@@ -290,23 +290,156 @@ runs:
         sbom: ${{ steps.setup.outputs.will_publish == 'true' }}
         push: ${{ steps.setup.outputs.will_publish == 'true' }}
 
-    - name: Generate SBOM
+        - name: Generate SBOM for each platform
       if: steps.setup.outputs.will_publish == 'true'
-      uses: ./generate-sbom.yml
+      id: generate-sbom
+      env:
+        IMAGE_NAME: ${{ inputs.image_name }}
+        PLATFORMS: ${{ inputs.platforms }}
+        IMAGE_TAGS: ${{ steps.setup.outputs.publish_to_ghcr == 'true' && steps.meta-ghcr.outputs.tags || steps.meta-gar.outputs.tags }}
+        OUTPUT_PREFIX: 'sbom'
+      shell: bash
+      run: |
+        # Split platforms by comma and generate SBOM for each
+        IFS=',' read -ra PLATFORM_ARRAY <<< "$PLATFORMS"
+        
+        sbom_files=""
+        
+        for platform in "${PLATFORM_ARRAY[@]}"; do
+          # Clean up platform name for filename (replace / with -)
+          platform_filename=$(echo "$platform" | tr '/' '-')
+          
+          # Generate filename
+          filename="${OUTPUT_PREFIX}-${IMAGE_NAME}-${platform_filename}.cyclonedx.json"
+          
+          echo "Generating SBOM for platform: $platform"
+          echo "Output file: $filename"
+          
+          # Generate SBOM for this platform
+          docker scout sbom \
+            --platform "$platform" \
+            --format cyclonedx \
+            --output "$filename" \
+            "$IMAGE_TAGS"
+          
+          # Add to list of generated files
+          if [[ -z "$sbom_files" ]]; then
+            sbom_files="$filename"
+          else
+            sbom_files="$sbom_files,$filename"
+          fi
+        done
+        
+        echo "sbom_files=$sbom_files" >> $GITHUB_OUTPUT
+        echo "Generated SBOM files: $sbom_files"
+
+    - name: Upload SBOM files to Dependency Track
+      if: steps.setup.outputs.will_publish == 'true' && inputs.dependency_track_hostname != '' && inputs.dependency_track_api_key != ''
+      env:
+        IMAGE_NAME: ${{ inputs.image_name }}
+        PLATFORMS: ${{ inputs.platforms }}
+        OUTPUT_PREFIX: 'sbom'
+        DT_HOSTNAME: ${{ inputs.dependency_track_hostname }}
+        DT_API_KEY: ${{ inputs.dependency_track_api_key }}
+        DT_PROJECT_NAME: ${{ inputs.dependency_track_project_name }}
+        DT_PROJECT_VERSION: ${{ inputs.dependency_track_project_version }}
+        DT_PROTOCOL: ${{ inputs.dependency_track_protocol }}
+        DT_PORT: ${{ inputs.dependency_track_port }}
+        DT_AUTO_CREATE: ${{ inputs.dependency_track_auto_create }}
+        DT_PARENT_NAME: ${{ inputs.dependency_track_parent_name }}
+        DT_PARENT_VERSION: ${{ inputs.dependency_track_parent_version }}
+        DT_AUTO_CREATE_PARENT: ${{ inputs.dependency_track_auto_create_parent }}
+      shell: bash
+      run: |
+        # Split platforms by comma and upload each SBOM
+        IFS=',' read -ra PLATFORM_ARRAY <<< "$PLATFORMS"
+        
+        for platform in "${PLATFORM_ARRAY[@]}"; do
+          # Clean up platform name for filename (replace / with -)
+          platform_filename=$(echo "$platform" | tr '/' '-')
+          
+          # Generate filename
+          filename="${OUTPUT_PREFIX}-${IMAGE_NAME}-${platform_filename}.cyclonedx.json"
+          
+          echo "Uploading SBOM for platform: $platform"
+          echo "File: $filename"
+          
+          if [[ -f "$filename" ]]; then
+            echo "Uploading $filename to Dependency Track..."
+            
+            # Construct the project name with platform suffix
+            project_name="${DT_PROJECT_NAME}"
+            if [[ "$DT_PROJECT_NAME" != "" ]]; then
+              project_name="${DT_PROJECT_NAME}-${platform_filename}"
+            fi
+            
+            # Upload using curl to Dependency Track API
+            # First, create or get the parent project if specified
+            parent_uuid=""
+            if [[ "$DT_PARENT_NAME" != "" && "$DT_PARENT_VERSION" != "" ]]; then
+              echo "Setting up parent project: $DT_PARENT_NAME:$DT_PARENT_VERSION"
+              
+              # Check if parent project exists
+              parent_response=$(curl -s -w "%{http_code}" -X GET \
+                -H "X-API-Key: ${DT_API_KEY}" \
+                "${DT_PROTOCOL}://${DT_HOSTNAME}:${DT_PORT}/api/v1/project/lookup?name=${DT_PARENT_NAME}&version=${DT_PARENT_VERSION}" \
+                -o /tmp/parent_lookup.json)
+              
+              if [[ "$parent_response" == "200" ]]; then
+                parent_uuid=$(jq -r '.uuid' /tmp/parent_lookup.json)
+                echo "Found existing parent project: $parent_uuid"
+              elif [[ "$DT_AUTO_CREATE_PARENT" == "true" ]]; then
+                echo "Creating parent project..."
+                parent_create_response=$(curl -s -w "%{http_code}" -X PUT \
+                  -H "X-API-Key: ${DT_API_KEY}" \
+                  -H "Content-Type: application/json" \
+                  -d "{\"name\":\"${DT_PARENT_NAME}\",\"version\":\"${DT_PARENT_VERSION}\"}" \
+                  "${DT_PROTOCOL}://${DT_HOSTNAME}:${DT_PORT}/api/v1/project" \
+                  -o /tmp/parent_create.json)
+                
+                if [[ "$parent_create_response" == "200" || "$parent_create_response" == "201" ]]; then
+                  parent_uuid=$(jq -r '.uuid' /tmp/parent_create.json)
+                  echo "Created parent project: $parent_uuid"
+                else
+                  echo "Failed to create parent project. HTTP status: $parent_create_response"
+                  cat /tmp/parent_create.json
+                fi
+              fi
+            fi
+            
+            # Upload the SBOM file
+            upload_url="${DT_PROTOCOL}://${DT_HOSTNAME}:${DT_PORT}/api/v1/bom"
+            if [[ "$parent_uuid" != "" ]]; then
+              upload_url="${upload_url}?parentUUID=${parent_uuid}"
+            fi
+            
+            response=$(curl -s -w "%{http_code}" -X POST \
+              -H "X-API-Key: ${DT_API_KEY}" \
+              -H "Content-Type: application/vnd.cyclonedx+json" \
+              --data-binary "@${filename}" \
+              "$upload_url" \
+              -o /tmp/upload_response.json)
+            
+            if [[ "$response" == "200" || "$response" == "201" ]]; then
+              echo "Successfully uploaded $filename to Dependency Track"
+              if [[ "$parent_uuid" != "" ]]; then
+                echo "Uploaded as child project under parent: $parent_uuid"
+              fi
+            else
+              echo "Failed to upload $filename to Dependency Track. HTTP status: $response"
+              cat /tmp/upload_response.json
+            fi
+          else
+            echo "Warning: SBOM file $filename not found"
+          fi
+        done
+
+    - name: Upload SBOM files as artifacts
+      if: steps.setup.outputs.will_publish == 'true'
+      uses: actions/upload-artifact@v4
       with:
-        image_name: ${{ inputs.image_name }}
-        platforms: ${{ inputs.platforms }}
-        image_tags: ${{ steps.setup.outputs.publish_to_ghcr == 'true' && steps.meta-ghcr.outputs.tags || steps.meta-gar.outputs.tags }}
-        dependency_track_hostname: ${{ inputs.dependency_track_hostname }}
-        dependency_track_api_key: ${{ inputs.dependency_track_api_key }}
-        dependency_track_project_name: ${{ inputs.dependency_track_project_name }}
-        dependency_track_project_version: ${{ inputs.dependency_track_project_version }}
-        dependency_track_auto_create: ${{ inputs.dependency_track_auto_create }}
-        dependency_track_protocol: ${{ inputs.dependency_track_protocol }}
-        dependency_track_port: ${{ inputs.dependency_track_port }}
-        dependency_track_parent_name: ${{ inputs.dependency_track_parent_name }}
-        dependency_track_parent_version: ${{ inputs.dependency_track_parent_version }}
-        dependency_track_auto_create_parent: ${{ inputs.dependency_track_auto_create_parent }}
+        name: scout-sbom
+        path: ${{ steps.generate-sbom.outputs.sbom_files }}
 
     - name: Output image URLs
       id: output-urls
