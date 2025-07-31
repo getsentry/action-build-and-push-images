@@ -290,6 +290,14 @@ runs:
         sbom: ${{ steps.setup.outputs.will_publish == 'true' }}
         push: ${{ steps.setup.outputs.will_publish == 'true' }}
 
+    - name: Install Syft
+      if: steps.setup.outputs.will_publish == 'true'
+      shell: bash
+      run: |
+        # Install Syft for SBOM generation
+        curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh | sh -s -- -b /usr/local/bin
+        syft --version
+
     - name: Generate SBOM for each platform
       if: steps.setup.outputs.will_publish == 'true'
       id: generate-sbom
@@ -315,11 +323,11 @@ runs:
           echo "Generating SBOM for platform: $platform"
           echo "Output file: $filename"
           
-          # Generate SBOM for this platform
-          docker scout sbom \
+          # Generate SBOM for this platform using Syft
+          syft packages \
             --platform "$platform" \
-            --format cyclonedx \
-            --output "$filename" \
+            --output cyclonedx-json \
+            --file "$filename" \
             "$IMAGE_TAGS"
           
           # Add to list of generated files
