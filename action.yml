@@ -369,17 +369,27 @@ runs:
           # Generate filename
           filename="${OUTPUT_PREFIX}-${IMAGE_NAME}-${platform_filename}.cyclonedx.json"
           
-          echo "Uploading SBOM for platform: $platform"
-          echo "File: $filename"
-          
-          if [[ -f "$filename" ]]; then
-            echo "Uploading $filename to Dependency Track..."
+                      echo "Uploading SBOM for platform: $platform"
+            echo "File: $filename"
+            
+            if [[ -f "$filename" ]]; then
+              # Validate required parameters
+              if [[ "$DT_PROJECT_VERSION" == "" ]]; then
+                echo "Error: DT_PROJECT_VERSION is required but not set"
+                continue
+              fi
+              
+              echo "Uploading $filename to Dependency Track..."
             
             # Construct the project name with platform suffix
-            project_name="${DT_PROJECT_NAME}"
+            # Use image name as fallback if project name is not provided
             if [[ "$DT_PROJECT_NAME" != "" ]]; then
               project_name="${DT_PROJECT_NAME}-${platform_filename}"
+            else
+              project_name="${IMAGE_NAME}-${platform_filename}"
             fi
+            
+            echo "Using project name: $project_name"
             
             # Upload using curl to Dependency Track API with alternative parameters
             # This approach automatically creates projects and handles parent-child relationships
