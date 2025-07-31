@@ -290,7 +290,7 @@ runs:
         sbom: ${{ steps.setup.outputs.will_publish == 'true' }}
         push: ${{ steps.setup.outputs.will_publish == 'true' }}
 
-        - name: Generate SBOM for each platform
+    - name: Generate SBOM for each platform
       if: steps.setup.outputs.will_publish == 'true'
       id: generate-sbom
       env:
