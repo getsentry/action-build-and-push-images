@@ -421,10 +421,10 @@ runs:
               upload_url="${upload_url}?parentUUID=${parent_uuid}"
             fi
             
-            response=$(curl -s -w "%{http_code}" -X POST \
+            response=$(curl -s -w "%{http_code}" -X PUT \
               -H "X-API-Key: ${DT_API_KEY}" \
-              -H "Content-Type: application/vnd.cyclonedx+json" \
-              --data-binary "@${filename}" \
+              -H "Content-Type: application/json" \
+              -d "@${filename}" \
               "$upload_url" \
               -o /tmp/upload_response.json)
             
