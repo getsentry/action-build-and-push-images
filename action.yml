@@ -79,6 +79,11 @@ inputs:
     required: false
     default: 'linux/amd64'
 
+  outputs:
+    description: 'List of output destinations (e.g., type=docker, type=image,name=myimage)'
+    required: false
+    default: ''
+
 
 outputs:
   ghcr_image_url:
@@ -248,6 +253,7 @@ runs:
         provenance: ${{ steps.setup.outputs.will_publish == 'true' && 'mode=max' || 'false' }}
         sbom: ${{ steps.setup.outputs.will_publish == 'true' }}
         push: ${{ steps.setup.outputs.will_publish == 'true' }}
+        outputs: ${{ inputs.outputs }}
 
     - name: Output image URLs
       id: output-urls
