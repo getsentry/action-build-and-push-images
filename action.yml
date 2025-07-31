@@ -381,57 +381,38 @@ runs:
               project_name="${DT_PROJECT_NAME}-${platform_filename}"
             fi
             
-            # Upload using curl to Dependency Track API
-            # First, create or get the parent project if specified
-            parent_uuid=""
-            if [[ "$DT_PARENT_NAME" != "" && "$DT_PARENT_VERSION" != "" ]]; then
-              echo "Setting up parent project: $DT_PARENT_NAME:$DT_PARENT_VERSION"
-              
-              # Check if parent project exists
-              parent_response=$(curl -s -w "%{http_code}" -X GET \
-                -H "X-API-Key: ${DT_API_KEY}" \
-                "${DT_PROTOCOL}://${DT_HOSTNAME}:${DT_PORT}/api/v1/project/lookup?name=${DT_PARENT_NAME}&version=${DT_PARENT_VERSION}" \
-                -o /tmp/parent_lookup.json)
-              
-              if [[ "$parent_response" == "200" ]]; then
-                parent_uuid=$(jq -r '.uuid' /tmp/parent_lookup.json)
-                echo "Found existing parent project: $parent_uuid"
-              elif [[ "$DT_AUTO_CREATE_PARENT" == "true" ]]; then
-                echo "Creating parent project..."
-                parent_create_response=$(curl -s -w "%{http_code}" -X PUT \
-                  -H "X-API-Key: ${DT_API_KEY}" \
-                  -H "Content-Type: application/json" \
-                  -d "{\"name\":\"${DT_PARENT_NAME}\",\"version\":\"${DT_PARENT_VERSION}\"}" \
-                  "${DT_PROTOCOL}://${DT_HOSTNAME}:${DT_PORT}/api/v1/project" \
-                  -o /tmp/parent_create.json)
-                
-                if [[ "$parent_create_response" == "200" || "$parent_create_response" == "201" ]]; then
-                  parent_uuid=$(jq -r '.uuid' /tmp/parent_create.json)
-                  echo "Created parent project: $parent_uuid"
-                else
-                  echo "Failed to create parent project. HTTP status: $parent_create_response"
-                  cat /tmp/parent_create.json
-                fi
-              fi
-            fi
-            
-            # Upload the SBOM file
+            # Upload using curl to Dependency Track API with alternative parameters
+            # This approach automatically creates projects and handles parent-child relationships
             upload_url="${DT_PROTOCOL}://${DT_HOSTNAME}:${DT_PORT}/api/v1/bom"
-            if [[ "$parent_uuid" != "" ]]; then
-              upload_url="${upload_url}?parentUUID=${parent_uuid}"
+            
+            # Build the curl command with form data
+            curl_cmd="curl -s -w \"%{http_code}\" -X POST"
+            curl_cmd="${curl_cmd} -H \"X-API-Key: ${DT_API_KEY}\""
+            curl_cmd="${curl_cmd} -H \"Content-Type: multipart/form-data\""
+            curl_cmd="${curl_cmd} -F \"autoCreate=true\""
+            curl_cmd="${curl_cmd} -F \"projectName=${project_name}\""
+            curl_cmd="${curl_cmd} -F \"projectVersion=${DT_PROJECT_VERSION}\""
+            
+            # Add parent project parameters if specified
+            if [[ "$DT_PARENT_NAME" != "" && "$DT_PARENT_VERSION" != "" ]]; then
+              curl_cmd="${curl_cmd} -F \"parentName=${DT_PARENT_NAME}\""
+              curl_cmd="${curl_cmd} -F \"parentVersion=${DT_PARENT_VERSION}\""
+              echo "Uploading as child project under parent: $DT_PARENT_NAME:$DT_PARENT_VERSION"
             fi
             
-            response=$(curl -s -w "%{http_code}" -X PUT \
-              -H "X-API-Key: ${DT_API_KEY}" \
-              -H "Content-Type: application/json" \
-              -d "@${filename}" \
-              "$upload_url" \
-              -o /tmp/upload_response.json)
+            curl_cmd="${curl_cmd} -F \"bom=@${filename}\""
+            curl_cmd="${curl_cmd} \"${upload_url}\""
+            curl_cmd="${curl_cmd} -o /tmp/upload_response.json"
+            
+            echo "Executing: $curl_cmd"
+            response=$(eval "$curl_cmd")
             
             if [[ "$response" == "200" || "$response" == "201" ]]; then
               echo "Successfully uploaded $filename to Dependency Track"
-              if [[ "$parent_uuid" != "" ]]; then
-                echo "Uploaded as child project under parent: $parent_uuid"
+              if [[ "$DT_PARENT_NAME" != "" && "$DT_PARENT_VERSION" != "" ]]; then
+                echo "Created as child project under parent: $DT_PARENT_NAME:$DT_PARENT_VERSION"
+              else
+                echo "Created as standalone project: $project_name:$DT_PROJECT_VERSION"
               fi
             else
               echo "Failed to upload $filename to Dependency Track. HTTP status: $response"
