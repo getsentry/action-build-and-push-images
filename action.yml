@@ -261,11 +261,11 @@ runs:
       run: |
         set -e
 
-        primary_ghcr_tag=$(echo ${{ steps.meta-ghcr.outputs.tags }} | head -n1)
-        primary_gar_tag=$(echo ${{ steps.meta-gar.outputs.tags }} | head -n1)
+        primary_ghcr_tag=$(echo "${{ steps.meta-ghcr.outputs.tags }}" | head -n1)
+        primary_gar_tag=$(echo "${{ steps.meta-gar.outputs.tags }}" | head -n1)
 
-        ghcr_image_url=${{ steps.output-urls.outputs.ghcr_image_url }}:$primary_ghcr_tag
-        gar_image_url=${{ steps.output-urls.outputs.gar_image_url }}:$primary_gar_tag
+        ghcr_image_url="$primary_ghcr_tag"
+        gar_image_url="$primary_gar_tag"
 
         # Output to GitHub Actions
         echo "ghcr_image_url=$ghcr_image_url" >> $GITHUB_OUTPUT
