@@ -110,6 +110,8 @@ jobs:
 | `google_ar_image_name` | GAR image name | No | - |
 | `tag_prefix` | Tag prefix | No | - |
 | `tag_suffix` | Tag suffix | No | - |
+| `tag_nightly` | Tag suffix | No | true |
+| `tag_latest` | Tag suffix | No | true |
 | `google_workload_identity_provider` | Google Workload Identity Provider | No | - |
 | `google_service_account` | Google Service Account | No | - |
 | `platforms` | Platforms to build (e.g., linux/amd64, linux/arm64) | No | `linux/amd64` |
