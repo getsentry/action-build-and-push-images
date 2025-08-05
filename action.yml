@@ -84,6 +84,16 @@ inputs:
     required: false
     default: ''
 
+  tag_latest:
+    description: 'Tag latest'
+    required: false
+    default: 'true'
+
+  tag_nightly:
+    description: 'Tag nightly'
+    required: false
+    default: 'true'
+
 
 outputs:
   ghcr_image_url:
@@ -202,9 +212,9 @@ runs:
           # Priority for sha tags is 2000, so it will be the highest priority. https://github.com/docker/metadata-action?tab=readme-ov-file#priority-attribute
           type=raw,value=${{ steps.setup.outputs.commit_sha }},prefix=${{ inputs.tag_prefix }},suffix=${{ inputs.tag_suffix }},priority=2000
           # set latest tag for default branch
-          type=raw,value=latest,enable={{is_default_branch}}
+          type=raw,value=latest,enable=${{ github.ref_name == github.event.repository.default_branch && inputs.tag_latest == 'true' }}
           # Nightly tags only for default branch pushes
-          type=schedule,pattern=nightly,enable={{is_default_branch}}
+          type=schedule,pattern=nightly,enable=${{ github.ref_name == github.event.repository.default_branch && inputs.tag_nightly == 'true' }}
         labels: |
             org.opencontainers.image.title=${{ github.event.repository.name }}
             org.opencontainers.image.description=${{ github.event.repository.description }}
@@ -224,7 +234,7 @@ runs:
           # SHA for all events (no nightly for GAR)
           type=raw,value=${{ steps.setup.outputs.commit_sha }},prefix=${{ inputs.tag_prefix }},suffix=${{ inputs.tag_suffix }},priority=2000
           # set latest tag for default branch
-          type=raw,value=latest,enable={{is_default_branch}}
+          type=raw,value=latest,enable=${{ github.ref_name == github.event.repository.default_branch && inputs.tag_latest == 'true' }}
         labels: |
             org.opencontainers.image.title=${{ github.event.repository.name }}
             org.opencontainers.image.description=${{ github.event.repository.description }}
