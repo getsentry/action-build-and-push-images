@@ -137,7 +137,7 @@ runs:
         PUBLISH_TO_GAR="false"
 
         # GHCR: Publish on default branch push, release branches, OR PR (if enabled)
-        if [[ "${{ inputs.ghcr }}" == "true" && (("${{ github.event_name }}" == "push" && ("${{ github.ref_name }}" == "${{ github.event.repository.default_branch }}" || "${{ github.ref_name }}" == release/*)) || ("${{ github.event_name }}" == "pull_request" && "${{ inputs.publish_on_pr }}" == "true")) ]]; then
+        if [[ "${{ inputs.ghcr }}" == "true" && (("${{ github.event_name }}" == "push" && ("${{ github.ref_name }}" == "${{ github.event.repository.default_branch }}" || "${{ github.ref_name }}" == releases/*)) || ("${{ github.event_name }}" == "pull_request" && "${{ inputs.publish_on_pr }}" == "true")) ]]; then
           PUBLISH_TO_GHCR="true"
         fi
 
