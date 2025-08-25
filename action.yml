@@ -53,6 +53,11 @@ inputs:
     required: false
     default: ''
 
+  tags:
+    description: 'Additional tags to apply to the image'
+    required: false
+    default: ''
+
   tag_prefix:
     description: 'Tag prefix'
     required: false
@@ -256,6 +261,7 @@ runs:
         tags: |
           ${{ steps.setup.outputs.publish_to_ghcr == 'true' && steps.meta-ghcr.outputs.tags || '' }}
           ${{ steps.setup.outputs.publish_to_gar == 'true' && steps.meta-gar.outputs.tags || '' }}
+          ${{ inputs.tags }}
         labels: ${{ (steps.setup.outputs.publish_to_ghcr == 'true' && steps.meta-ghcr.outputs.labels) || (steps.setup.outputs.publish_to_gar == 'true' && steps.meta-gar.outputs.labels) || '' }}
         annotations: ${{ (steps.setup.outputs.publish_to_ghcr == 'true' && steps.meta-ghcr.outputs.annotations) || (steps.setup.outputs.publish_to_gar == 'true' && steps.meta-gar.outputs.annotations) || '' }}
         cache-from: type=gha,scope=buildcache
