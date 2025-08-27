@@ -1,5 +1,5 @@
 name: 'Build and Push Container Images'
-description: 'Builds images on PRs and builds/pushes to registries on default branch'
+description: 'Builds images on PRs and builds/pushes to registries on default branch and merge queues'
 
 inputs:
   # Image configuration
@@ -137,17 +137,25 @@ runs:
           echo "GHCR Image: $GHCR_IMAGE_NAME"
         fi
 
+        # Helper function to determine if we're targeting the default branch
+        IS_DEFAULT_BRANCH="false"
+        if [[ "${{ github.event_name }}" == "push" && "${{ github.ref_name }}" == "${{ github.event.repository.default_branch }}" ]]; then
+          IS_DEFAULT_BRANCH="true"
+        elif [[ "${{ github.event_name }}" == "merge_group" && "${{ github.event.merge_group.base_ref }}" == "refs/heads/${{ github.event.repository.default_branch }}" ]]; then
+          IS_DEFAULT_BRANCH="true"
+        fi
+
         # Determine publishing conditions
         PUBLISH_TO_GHCR="false"
         PUBLISH_TO_GAR="false"
 
-        # GHCR: Publish on default branch push, release branches, OR PR (if enabled)
-        if [[ "${{ inputs.ghcr }}" == "true" && (("${{ github.event_name }}" == "push" && ("${{ github.ref_name }}" == "${{ github.event.repository.default_branch }}" || "${{ github.ref_name }}" == releases/*)) || ("${{ github.event_name }}" == "pull_request" && "${{ inputs.publish_on_pr }}" == "true")) ]]; then
+        # GHCR: Publish on default branch push, merge queue, release branches, OR PR (if enabled)
+        if [[ "${{ inputs.ghcr }}" == "true" && (("$IS_DEFAULT_BRANCH" == "true") || ("${{ github.event_name }}" == "push" && "${{ github.ref_name }}" == releases/*) || ("${{ github.event_name }}" == "pull_request" && "${{ inputs.publish_on_pr }}" == "true")) ]]; then
           PUBLISH_TO_GHCR="true"
         fi
 
-        # GAR: Publish on default branch push
-        if [[ "${{ inputs.google_ar }}" == "true" && (("${{ github.event_name }}" == "push" && "${{ github.ref_name }}" == "${{ github.event.repository.default_branch }}") || ("${{ github.event_name }}" == "pull_request" && "${{ inputs.publish_on_pr }}" == "true")) ]]; then
+        # GAR: Publish on default branch push and merge queue
+        if [[ "${{ inputs.google_ar }}" == "true" && (("$IS_DEFAULT_BRANCH" == "true") || ("${{ github.event_name }}" == "pull_request" && "${{ inputs.publish_on_pr }}" == "true")) ]]; then
           PUBLISH_TO_GAR="true"
         fi
 
@@ -160,6 +168,7 @@ runs:
         echo "publish_to_ghcr=$PUBLISH_TO_GHCR" >> $GITHUB_OUTPUT
         echo "publish_to_gar=$PUBLISH_TO_GAR" >> $GITHUB_OUTPUT
         echo "will_publish=$WILL_PUBLISH" >> $GITHUB_OUTPUT
+        echo "is_default_branch=$IS_DEFAULT_BRANCH" >> $GITHUB_OUTPUT
         echo "Publishing to GHCR: $PUBLISH_TO_GHCR"
         echo "Publishing to GAR: $PUBLISH_TO_GAR"
         echo "Will publish to any registry: $WILL_PUBLISH"
@@ -167,6 +176,8 @@ runs:
         # Determine the correct commit SHA based on event type
         if [[ "${{ github.event_name }}" == "pull_request" ]]; then
           COMMIT_SHA="${{ github.event.pull_request.head.sha }}"
+        elif [[ "${{ github.event_name }}" == "merge_group" ]]; then
+          COMMIT_SHA="${{ github.event.merge_group.head_sha }}"
         else
           COMMIT_SHA="${{ github.sha }}"
         fi
@@ -217,9 +228,9 @@ runs:
           # Priority for sha tags is 2000, so it will be the highest priority. https://github.com/docker/metadata-action?tab=readme-ov-file#priority-attribute
           type=raw,value=${{ steps.setup.outputs.commit_sha }},prefix=${{ inputs.tag_prefix }},suffix=${{ inputs.tag_suffix }},priority=2000
           # set latest tag for default branch
-          type=raw,value=latest,enable=${{ github.ref_name == github.event.repository.default_branch && inputs.tag_latest == 'true' }}
-          # Nightly tags only for default branch pushes
-          type=schedule,pattern=nightly,enable=${{ github.ref_name == github.event.repository.default_branch && inputs.tag_nightly == 'true' }}
+          type=raw,value=latest,enable=${{ steps.setup.outputs.is_default_branch == 'true' && inputs.tag_latest == 'true' }}
+          # Nightly tags only for default branch pushes and merge queue
+          type=schedule,pattern=nightly,enable=${{ steps.setup.outputs.is_default_branch == 'true' && inputs.tag_nightly == 'true' }}
         labels: |
             org.opencontainers.image.title=${{ github.event.repository.name }}
             org.opencontainers.image.description=${{ github.event.repository.description }}
@@ -239,7 +250,7 @@ runs:
           # SHA for all events (no nightly for GAR)
           type=raw,value=${{ steps.setup.outputs.commit_sha }},prefix=${{ inputs.tag_prefix }},suffix=${{ inputs.tag_suffix }},priority=2000
           # set latest tag for default branch
-          type=raw,value=latest,enable=${{ github.ref_name == github.event.repository.default_branch && inputs.tag_latest == 'true' }}
+          type=raw,value=latest,enable=${{ steps.setup.outputs.is_default_branch == 'true' && inputs.tag_latest == 'true' }}
         labels: |
             org.opencontainers.image.title=${{ github.event.repository.name }}
             org.opencontainers.image.description=${{ github.event.repository.description }}
