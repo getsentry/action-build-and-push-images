@@ -99,6 +99,16 @@ inputs:
     required: false
     default: 'true'
 
+  cache_from:
+    description: 'Cache sources for Docker build (e.g., type=gha,scope=buildcache)'
+    required: false
+    default: 'type=gha,scope=buildcache'
+
+  cache_to:
+    description: 'Cache destinations for Docker build (e.g., type=gha,mode=max,scope=buildcache)'
+    required: false
+    default: 'type=gha,mode=max,scope=buildcache'
+
 
 outputs:
   ghcr_image_url:
@@ -275,8 +285,8 @@ runs:
           ${{ inputs.tags }}
         labels: ${{ (steps.setup.outputs.publish_to_ghcr == 'true' && steps.meta-ghcr.outputs.labels) || (steps.setup.outputs.publish_to_gar == 'true' && steps.meta-gar.outputs.labels) || '' }}
         annotations: ${{ (steps.setup.outputs.publish_to_ghcr == 'true' && steps.meta-ghcr.outputs.annotations) || (steps.setup.outputs.publish_to_gar == 'true' && steps.meta-gar.outputs.annotations) || '' }}
-        cache-from: type=gha,scope=buildcache
-        cache-to: ${{ steps.setup.outputs.will_publish == 'true' && 'type=gha,mode=max,scope=buildcache' || '' }}
+        cache-from: ${{ inputs.cache_from }}
+        cache-to: ${{ steps.setup.outputs.will_publish == 'true' && inputs.cache_to || '' }}
         provenance: ${{ steps.setup.outputs.will_publish == 'true' && 'mode=max' || 'false' }}
         sbom: ${{ steps.setup.outputs.will_publish == 'true' }}
         push: ${{ steps.setup.outputs.will_publish == 'true' }}
