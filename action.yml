@@ -173,7 +173,7 @@ runs:
         fi
 
         # GAR: Publish on default branch push and merge queue
-        if [[ "${{ inputs.google_ar }}" == "true" && (("$IS_DEFAULT_BRANCH" == "true") || ("${{ github.event_name }}" == "pull_request" && "${{ inputs.publish_on_pr }}" == "true")) ]]; then
+        if [[ "${{ inputs.google_ar }}" == "true" && (("$IS_DEFAULT_BRANCH" == "true") || ("${{ github.event_name }}" == "push" && "$IS_RELEASE_BRANCH" == "true") || ("${{ github.event_name }}" == "pull_request" && "${{ inputs.publish_on_pr }}" == "true")) ]]; then
           PUBLISH_TO_GAR="true"
         fi
 
