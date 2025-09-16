@@ -27,6 +27,11 @@ inputs:
     required: false
     default: ''
 
+  release_branches:
+    description: 'List of release branch names, separated by commas'
+    required: false
+    default: 'release,releases'
+
   # Registry configuration
   ghcr:
     description: 'Enable GitHub Container Registry'
@@ -145,12 +150,25 @@ runs:
           IS_DEFAULT_BRANCH="true"
         fi
 
+        # Iterate over release branch names. In pseudocode:
+        #   for branch in ref_name.split(','):
+        #     if branch.startswith(branch + "/"):
+        #       IS_RELEASE_BRANCH="true"
+        #       break
+        IS_RELEASE_BRANCH="false"
+        for branch in $(echo "${{ inputs.release_branches }}" | tr ',' ' '); do
+          if [[ "${{ github.ref_name }}" == $branch/* ]]; then
+            IS_RELEASE_BRANCH="true"
+            break
+          fi
+        done
+
         # Determine publishing conditions
         PUBLISH_TO_GHCR="false"
         PUBLISH_TO_GAR="false"
 
         # GHCR: Publish on default branch push, merge queue, release branches, OR PR (if enabled)
-        if [[ "${{ inputs.ghcr }}" == "true" && (("$IS_DEFAULT_BRANCH" == "true") || ("${{ github.event_name }}" == "push" && "${{ github.ref_name }}" == releases/*) || ("${{ github.event_name }}" == "pull_request" && "${{ inputs.publish_on_pr }}" == "true")) ]]; then
+        if [[ "${{ inputs.ghcr }}" == "true" && (("$IS_DEFAULT_BRANCH" == "true") || ("${{ github.event_name }}" == "push" && "$IS_RELEASE_BRANCH" == "true") || ("${{ github.event_name }}" == "pull_request" && "${{ inputs.publish_on_pr }}" == "true")) ]]; then
           PUBLISH_TO_GHCR="true"
         fi
 

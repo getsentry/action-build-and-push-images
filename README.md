@@ -103,6 +103,7 @@ jobs:
 | `build_context` | Build context directory | No | `.` |
 | `build_target` | Docker build target stage | No | - |
 | `build_args` | Docker build arguments (multiline) | No | - |
+| `release_branches` | Release branch names, separated by commas | No | `release,releases` |
 | `ghcr` | Enable GitHub Container Registry | No | `true` |
 | `ghcr_image_name` | GHCR image name | No | `ghcr.io/{owner}/{image_name}` |
 | `publish_on_pr` | Publish images on pull requests (SHA tags only) | No | `false` |
