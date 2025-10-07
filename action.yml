@@ -248,7 +248,7 @@ runs:
           # set latest tag for default branch
           type=raw,value=latest,enable=${{ steps.setup.outputs.is_default_branch == 'true' && inputs.tag_latest == 'true' }}
           # Nightly tags only for default branch pushes and merge queue
-          type=schedule,pattern=nightly,enable=${{ steps.setup.outputs.is_default_branch == 'true' && inputs.tag_nightly == 'true' }}
+          type=raw,value=nightly,enable=${{ steps.setup.outputs.is_default_branch == 'true' && inputs.tag_nightly == 'true' }}
         labels: |
             org.opencontainers.image.title=${{ github.event.repository.name }}
             org.opencontainers.image.description=${{ github.event.repository.description }}
