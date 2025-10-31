@@ -1,0 +1,11 @@
+minVersion: 1.2.0
+changelog: CHANGELOG.md
+changelogPolicy: auto
+preReleaseCommand: bash scripts/bump-version.sh
+github:
+  owner: getsentry
+  repo: action-build-and-push-images
+artifactProvider:
+  name: github
+targets:
+  - name: github
