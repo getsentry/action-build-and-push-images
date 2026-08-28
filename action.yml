@@ -297,8 +297,10 @@ runs:
         cache-to: ${{ steps.setup.outputs.will_publish == 'true' && 'type=gha,mode=max,scope=buildcache' || '' }}
         provenance: ${{ steps.setup.outputs.will_publish == 'true' && 'mode=max' || 'false' }}
         sbom: ${{ steps.setup.outputs.will_publish == 'true' }}
-        push: ${{ steps.setup.outputs.will_publish == 'true' }}
-        outputs: ${{ inputs.outputs }}
+        push: false # Publish via an explicit image output, so we can force gzip.
+        outputs: |
+          ${{ inputs.outputs }}
+          ${{ steps.setup.outputs.will_publish == 'true' && 'type=image,push=true,compression=gzip,force-compression=true' || '' }}
 
     - name: Output image URLs
       id: output-urls
