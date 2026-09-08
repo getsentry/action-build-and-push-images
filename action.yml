@@ -137,6 +137,9 @@ runs:
             exit 1
           fi
           echo "GAR Image: ${{ inputs.google_ar_image_name }}"
+          GAR_REGISTRY="${{ inputs.google_ar_image_name }}"
+          GAR_REGISTRY="${GAR_REGISTRY%%/*}"
+          echo "gar_registry=$GAR_REGISTRY" >> $GITHUB_OUTPUT
         fi
         if [[ "${{ inputs.ghcr }}" == "true" ]]; then
           echo "GHCR Image: $GHCR_IMAGE_NAME"
@@ -223,17 +226,22 @@ runs:
 
 
     - name: Setup Google Cloud authentication
+      id: gcp-auth
       if: steps.setup.outputs.publish_to_gar == 'true'
       uses: google-github-actions/auth@ba79af03959ebeac9769e648f473a284504d9193 # v2.1.10
       with:
         workload_identity_provider: ${{ inputs.google_workload_identity_provider }}
         service_account: ${{ inputs.google_service_account }}
+        create_credentials_file: false
+        token_format: access_token
 
-    - name: Configure Docker for Google Artifact Registry
+    - name: Login to Google Artifact Registry
       if: steps.setup.outputs.publish_to_gar == 'true'
-      shell: bash
-      run: |
-        gcloud auth configure-docker $(echo "${{ inputs.google_ar_image_name }}" | cut -d'/' -f1)
+      uses: docker/login-action@74a5d142397b4f367a81961eba4e8cd7edddf772 # v3
+      with:
+        registry: ${{ steps.setup.outputs.gar_registry }}
+        username: oauth2accesstoken
+        password: ${{ steps.gcp-auth.outputs.access_token }}
 
     - name: Extract metadata for GHCR
       id: meta-ghcr
