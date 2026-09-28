@@ -120,36 +120,53 @@ runs:
     - name: Setup build metadata
       id: setup
       shell: bash
+      env:
+        INPUT_GHCR_IMAGE_NAME: ${{ inputs.ghcr_image_name }}
+        INPUT_IMAGE_NAME: ${{ inputs.image_name }}
+        INPUT_GOOGLE_AR: ${{ inputs.google_ar }}
+        INPUT_GOOGLE_AR_IMAGE_NAME: ${{ inputs.google_ar_image_name }}
+        INPUT_GHCR: ${{ inputs.ghcr }}
+        INPUT_RELEASE_BRANCHES: ${{ inputs.release_branches }}
+        INPUT_PUBLISH_ON_PR: ${{ inputs.publish_on_pr }}
+        INPUT_PLATFORMS: ${{ inputs.platforms }}
+        GH_REPOSITORY_OWNER: ${{ github.repository_owner }}
+        GH_EVENT_NAME: ${{ github.event_name }}
+        GH_REF_NAME: ${{ github.ref_name }}
+        GH_DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        GH_MERGE_GROUP_BASE_REF: ${{ github.event.merge_group.base_ref }}
+        GH_PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        GH_MERGE_GROUP_HEAD_SHA: ${{ github.event.merge_group.head_sha }}
+        GH_SHA: ${{ github.sha }}
       run: |
         # Setup image names
-        GHCR_IMAGE_NAME="${{ inputs.ghcr_image_name }}"
+        GHCR_IMAGE_NAME="$INPUT_GHCR_IMAGE_NAME"
         if [[ -z "$GHCR_IMAGE_NAME" ]]; then
-          GHCR_IMAGE_NAME="ghcr.io/${{ github.repository_owner }}/${{ inputs.image_name }}"
+          GHCR_IMAGE_NAME="ghcr.io/$GH_REPOSITORY_OWNER/$INPUT_IMAGE_NAME"
         fi
         echo "ghcr_image_name=$GHCR_IMAGE_NAME" >> $GITHUB_OUTPUT
 
-        echo "Event: ${{ github.event_name }}"
-        echo "Branch: ${{ github.ref_name }}"
-        echo "platforms: ${{ inputs.platforms }}"
-        if [[ "${{ inputs.google_ar }}" == "true" ]]; then
-          if [[ -z "${{ inputs.google_ar_image_name }}" ]]; then
+        echo "Event: $GH_EVENT_NAME"
+        echo "Branch: $GH_REF_NAME"
+        echo "platforms: $INPUT_PLATFORMS"
+        if [[ "$INPUT_GOOGLE_AR" == "true" ]]; then
+          if [[ -z "$INPUT_GOOGLE_AR_IMAGE_NAME" ]]; then
             echo "Error: Google Artifact Registry image name is required when publishing to Google Artifact Registry is enabled"
             exit 1
           fi
-          echo "GAR Image: ${{ inputs.google_ar_image_name }}"
-          GAR_REGISTRY="${{ inputs.google_ar_image_name }}"
+          echo "GAR Image: $INPUT_GOOGLE_AR_IMAGE_NAME"
+          GAR_REGISTRY="$INPUT_GOOGLE_AR_IMAGE_NAME"
           GAR_REGISTRY="${GAR_REGISTRY%%/*}"
           echo "gar_registry=$GAR_REGISTRY" >> $GITHUB_OUTPUT
         fi
-        if [[ "${{ inputs.ghcr }}" == "true" ]]; then
+        if [[ "$INPUT_GHCR" == "true" ]]; then
           echo "GHCR Image: $GHCR_IMAGE_NAME"
         fi
 
         # Helper function to determine if we're targeting the default branch
         IS_DEFAULT_BRANCH="false"
-        if [[ "${{ github.event_name }}" == "push" && "${{ github.ref_name }}" == "${{ github.event.repository.default_branch }}" ]]; then
+        if [[ "$GH_EVENT_NAME" == "push" && "$GH_REF_NAME" == "$GH_DEFAULT_BRANCH" ]]; then
           IS_DEFAULT_BRANCH="true"
-        elif [[ "${{ github.event_name }}" == "merge_group" && "${{ github.event.merge_group.base_ref }}" == "refs/heads/${{ github.event.repository.default_branch }}" ]]; then
+        elif [[ "$GH_EVENT_NAME" == "merge_group" && "$GH_MERGE_GROUP_BASE_REF" == "refs/heads/$GH_DEFAULT_BRANCH" ]]; then
           IS_DEFAULT_BRANCH="true"
         fi
 
@@ -159,8 +176,8 @@ runs:
         #       IS_RELEASE_BRANCH="true"
         #       break
         IS_RELEASE_BRANCH="false"
-        for branch in $(echo "${{ inputs.release_branches }}" | tr ',' ' '); do
-          if [[ "${{ github.ref_name }}" == $branch/* ]]; then
+        for branch in $(echo "$INPUT_RELEASE_BRANCHES" | tr ',' ' '); do
+          if [[ "$GH_REF_NAME" == $branch/* ]]; then
             IS_RELEASE_BRANCH="true"
             break
           fi
@@ -171,12 +188,12 @@ runs:
         PUBLISH_TO_GAR="false"
 
         # GHCR: Publish on default branch push, merge queue, release branches, OR PR (if enabled)
-        if [[ "${{ inputs.ghcr }}" == "true" && (("$IS_DEFAULT_BRANCH" == "true") || ("${{ github.event_name }}" == "push" && "$IS_RELEASE_BRANCH" == "true") || ("${{ github.event_name }}" == "pull_request" && "${{ inputs.publish_on_pr }}" == "true")) ]]; then
+        if [[ "$INPUT_GHCR" == "true" && (("$IS_DEFAULT_BRANCH" == "true") || ("$GH_EVENT_NAME" == "push" && "$IS_RELEASE_BRANCH" == "true") || ("$GH_EVENT_NAME" == "pull_request" && "$INPUT_PUBLISH_ON_PR" == "true")) ]]; then
           PUBLISH_TO_GHCR="true"
         fi
 
         # GAR: Publish on default branch push and merge queue
-        if [[ "${{ inputs.google_ar }}" == "true" && (("$IS_DEFAULT_BRANCH" == "true") || ("${{ github.event_name }}" == "push" && "$IS_RELEASE_BRANCH" == "true") || ("${{ github.event_name }}" == "pull_request" && "${{ inputs.publish_on_pr }}" == "true")) ]]; then
+        if [[ "$INPUT_GOOGLE_AR" == "true" && (("$IS_DEFAULT_BRANCH" == "true") || ("$GH_EVENT_NAME" == "push" && "$IS_RELEASE_BRANCH" == "true") || ("$GH_EVENT_NAME" == "pull_request" && "$INPUT_PUBLISH_ON_PR" == "true")) ]]; then
           PUBLISH_TO_GAR="true"
         fi
 
@@ -195,12 +212,12 @@ runs:
         echo "Will publish to any registry: $WILL_PUBLISH"
 
         # Determine the correct commit SHA based on event type
-        if [[ "${{ github.event_name }}" == "pull_request" ]]; then
-          COMMIT_SHA="${{ github.event.pull_request.head.sha }}"
-        elif [[ "${{ github.event_name }}" == "merge_group" ]]; then
-          COMMIT_SHA="${{ github.event.merge_group.head_sha }}"
+        if [[ "$GH_EVENT_NAME" == "pull_request" ]]; then
+          COMMIT_SHA="$GH_PR_HEAD_SHA"
+        elif [[ "$GH_EVENT_NAME" == "merge_group" ]]; then
+          COMMIT_SHA="$GH_MERGE_GROUP_HEAD_SHA"
         else
-          COMMIT_SHA="${{ github.sha }}"
+          COMMIT_SHA="$GH_SHA"
         fi
         echo "commit_sha=$COMMIT_SHA" >> $GITHUB_OUTPUT
         echo "Using commit SHA: $COMMIT_SHA"
@@ -313,11 +330,14 @@ runs:
     - name: Output image URLs
       id: output-urls
       shell: bash
+      env:
+        META_GHCR_TAGS: ${{ steps.meta-ghcr.outputs.tags }}
+        META_GAR_TAGS: ${{ steps.meta-gar.outputs.tags }}
       run: |
         set -e
 
-        primary_ghcr_tag=$(echo "${{ steps.meta-ghcr.outputs.tags }}" | head -n1)
-        primary_gar_tag=$(echo "${{ steps.meta-gar.outputs.tags }}" | head -n1)
+        primary_ghcr_tag=$(echo "$META_GHCR_TAGS" | head -n1)
+        primary_gar_tag=$(echo "$META_GAR_TAGS" | head -n1)
 
         ghcr_image_url="$primary_ghcr_tag"
         gar_image_url="$primary_gar_tag"
