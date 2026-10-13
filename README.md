@@ -117,6 +117,8 @@ jobs:
 | `google_service_account` | Google Service Account | No | - |
 | `platforms` | Platforms to build (e.g., linux/amd64, linux/arm64) | No | `linux/amd64` |
 | `outputs` | List of output destinations (e.g., type=docker, type=image,name=myimage) | No | - |
+| `cache_from` | BuildKit cache source (empty to disable) | No | `type=gha,scope=buildcache` |
+| `cache_to` | BuildKit cache destination, only used when publishing (empty to disable) | No | `type=gha,mode=max,scope=buildcache` |
 
 ## Action Outputs
 
