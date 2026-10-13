@@ -104,6 +104,16 @@ inputs:
     required: false
     default: 'true'
 
+  cache_from:
+    description: 'BuildKit cache source (empty to disable)'
+    required: false
+    default: 'type=gha,scope=buildcache'
+
+  cache_to:
+    description: 'BuildKit cache destination, only used when publishing (empty to disable)'
+    required: false
+    default: 'type=gha,mode=max,scope=buildcache'
+
 
 outputs:
   ghcr_image_url:
@@ -137,6 +147,7 @@ runs:
         GH_PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         GH_MERGE_GROUP_HEAD_SHA: ${{ github.event.merge_group.head_sha }}
         GH_SHA: ${{ github.sha }}
+        RUNNER_ARCH: ${{ runner.arch }}
       run: |
         # Setup image names
         GHCR_IMAGE_NAME="$INPUT_GHCR_IMAGE_NAME"
@@ -222,7 +233,23 @@ runs:
         echo "commit_sha=$COMMIT_SHA" >> $GITHUB_OUTPUT
         echo "Using commit SHA: $COMMIT_SHA"
 
+        # QEMU is only needed to emulate platforms other than the runner's own
+        case "$RUNNER_ARCH" in
+          X64) NATIVE_PLATFORM="linux/amd64" ;;
+          ARM64) NATIVE_PLATFORM="linux/arm64" ;;
+          *) NATIVE_PLATFORM="" ;;
+        esac
+        NEEDS_QEMU="false"
+        for platform in $(echo "$INPUT_PLATFORMS" | tr ',' ' '); do
+          if [[ "$platform" != "$NATIVE_PLATFORM" ]]; then
+            NEEDS_QEMU="true"
+          fi
+        done
+        echo "needs_qemu=$NEEDS_QEMU" >> $GITHUB_OUTPUT
+        echo "Needs QEMU: $NEEDS_QEMU"
+
     - name: Set up qemu
+      if: steps.setup.outputs.needs_qemu == 'true'
       uses: docker/setup-qemu-action@29109295f81e9208d7d86ff1c6c12d2833863392 #v3.6.0
       with:
         platforms: ${{ inputs.platforms }}
@@ -322,8 +349,8 @@ runs:
           ${{ inputs.tags }}
         labels: ${{ (steps.setup.outputs.publish_to_ghcr == 'true' && steps.meta-ghcr.outputs.labels) || (steps.setup.outputs.publish_to_gar == 'true' && steps.meta-gar.outputs.labels) || '' }}
         annotations: ${{ (steps.setup.outputs.publish_to_ghcr == 'true' && steps.meta-ghcr.outputs.annotations) || (steps.setup.outputs.publish_to_gar == 'true' && steps.meta-gar.outputs.annotations) || '' }}
-        cache-from: type=gha,scope=buildcache
-        cache-to: ${{ steps.setup.outputs.will_publish == 'true' && 'type=gha,mode=max,scope=buildcache' || '' }}
+        cache-from: ${{ inputs.cache_from }}
+        cache-to: ${{ steps.setup.outputs.will_publish == 'true' && inputs.cache_to || '' }}
         provenance: ${{ steps.setup.outputs.will_publish == 'true' && 'mode=max' || 'false' }}
         sbom: ${{ steps.setup.outputs.will_publish == 'true' }}
         push: false # Publish via an explicit image output, so we can force gzip.
