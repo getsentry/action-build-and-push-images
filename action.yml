@@ -181,11 +181,6 @@ runs:
           IS_DEFAULT_BRANCH="true"
         fi
 
-        # Iterate over release branch names. In pseudocode:
-        #   for branch in ref_name.split(','):
-        #     if branch.startswith(branch + "/"):
-        #       IS_RELEASE_BRANCH="true"
-        #       break
         IS_RELEASE_BRANCH="false"
         for branch in $(echo "$INPUT_RELEASE_BRANCHES" | tr ',' ' '); do
           if [[ "$GH_REF_NAME" == $branch/* ]]; then
