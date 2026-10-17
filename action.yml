@@ -198,7 +198,7 @@ runs:
           PUBLISH_TO_GHCR="true"
         fi
 
-        # GAR: Publish on default branch push and merge queue
+        # GAR: Publish on default branch push, merge queue, release branches, OR PR (if enabled)
         if [[ "$INPUT_GOOGLE_AR" == "true" && (("$IS_DEFAULT_BRANCH" == "true") || ("$GH_EVENT_NAME" == "push" && "$IS_RELEASE_BRANCH" == "true") || ("$GH_EVENT_NAME" == "pull_request" && "$INPUT_PUBLISH_ON_PR" == "true")) ]]; then
           PUBLISH_TO_GAR="true"
         fi
