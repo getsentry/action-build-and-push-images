@@ -1,5 +1,5 @@
 name: 'Build and Push Container Images'
-description: 'Builds images on PRs and builds/pushes to registries on default branch and merge queues'
+description: 'Builds images and pushes them to registries on default branch pushes, merge queues, release branches, and pull requests (opt-in)'
 
 inputs:
   # Image configuration
