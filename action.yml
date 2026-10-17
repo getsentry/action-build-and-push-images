@@ -4,7 +4,7 @@ description: 'Builds images and pushes them to registries on default branch push
 inputs:
   # Image configuration
   image_name:
-    description: 'Base image name (e.g., myorg/myapp)'
+    description: 'Base image name (e.g., myapp, published to ghcr.io/{owner}/myapp)'
     required: true
 
   dockerfile_path:
