@@ -1,15 +1,17 @@
 # action-build-and-push-images
 
-This is a composite GitHub action that builds and publishes images to
+A composite GitHub Action that builds container images with Docker Buildx and publishes them to:
 
 - GitHub Container Registry (GHCR)
 - Google Artifact Registry (GAR)
 
+The action always builds. It publishes only for the events listed in [Publishing behavior](#publishing-behavior).
+
 ## Usage
 
-### Required Permissions
+### Required permissions
 
-Add the following permissions block to your workflow to allow publishing to GHCR and/or GAR:
+To publish, add this permissions block to your workflow:
 
 ```yaml
 permissions:
@@ -18,18 +20,17 @@ permissions:
   id-token: write      # Required for Google Artifact Registry (GAR)
 ```
 
-If you're just building, `packages` should be set to `read` and `id-token` should be omitted.`
+If you only build, set `packages` to `read` and omit `id-token`:
 
 ```yaml
 permissions:
   contents: read
   packages: read      # Required to read from GHCR if using as cache
-  # id-token is omitted here
 ```
 
-> Adjust permissions as needed for your use case. See [GitHub Actions permissions docs](https://docs.github.com/en/actions/using-jobs/assigning-permissions-to-jobs) for more details.
+See the [GitHub Actions permissions docs](https://docs.github.com/en/actions/using-jobs/assigning-permissions-to-jobs) for details.
 
-### Basic Usage
+### Basic usage
 
 ```yaml
 - name: Build and push image
@@ -39,7 +40,9 @@ permissions:
     platforms: 'linux/amd64'
 ```
 
-### Multi-Architecture with Matrix Strategy
+### Multi-architecture with a matrix strategy
+
+Each matrix job pushes its own image. The action does not merge them into a multi-arch manifest. Give each job a distinct `tag_suffix` so the jobs do not overwrite each other's tags, and a distinct cache scope so they do not overwrite each other's cache. Disable `tag_latest` and `tag_nightly`, because those tags have no suffix. Assemble the manifest in a later job, for example with `docker buildx imagetools create`.
 
 ```yaml
 jobs:
@@ -47,20 +50,27 @@ jobs:
     strategy:
       matrix:
         include:
-          - platforms: linux/amd64
-            runner: ubuntu-latest
-          - platforms: linux/arm64
-            runner: ubuntu-latest-arm64
+          - arch: amd64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
     runs-on: ${{ matrix.runner }}
     steps:
       - name: Build and push image
         uses: getsentry/action-build-and-push-images@sha
         with:
           image_name: 'sentry'
-          platforms: ${{ matrix.platforms }}
+          platforms: linux/${{ matrix.arch }}
+          tag_suffix: -${{ matrix.arch }}
+          tag_latest: false
+          tag_nightly: false
+          cache_from: type=gha,scope=buildcache-${{ matrix.arch }}
+          cache_to: type=gha,mode=max,scope=buildcache-${{ matrix.arch }}
 ```
 
-### With Custom Build Configuration
+When every platform in `platforms` matches the runner's architecture, the action skips QEMU setup.
+
+### Custom build configuration
 
 ```yaml
 - name: Build and push image
@@ -77,6 +87,8 @@ jobs:
 ```
 
 ### Publishing to Google Artifact Registry
+
+The action authenticates to GAR with Workload Identity Federation. It derives the registry host from the first path segment of `google_ar_image_name`.
 
 ```yaml
 - name: Build and push image
@@ -103,31 +115,32 @@ jobs:
 | `build_context` | Build context directory | No | `.` |
 | `build_target` | Docker build target stage | No | - |
 | `build_args` | Docker build arguments (multiline) | No | - |
-| `release_branches` | Release branch names, separated by commas | No | `release,releases` |
+| `release_branches` | Comma-separated release branch prefixes. A push to `<prefix>/*` publishes. | No | `release,releases` |
 | `ghcr` | Enable GitHub Container Registry | No | `true` |
 | `ghcr_image_name` | GHCR image name | No | `ghcr.io/{owner}/{image_name}` |
 | `publish_on_pr` | Publish images on pull requests (SHA tags only) | No | `false` |
 | `google_ar` | Enable Google Artifact Registry | No | `false` |
-| `google_ar_image_name` | GAR image name | No | - |
-| `tag_prefix` | Tag prefix | No | - |
-| `tag_suffix` | Tag suffix | No | - |
-| `tag_nightly` | Tag suffix | No | true |
-| `tag_latest` | Tag suffix | No | true |
+| `google_ar_image_name` | GAR image name. Required when `google_ar` is `true`. | No | - |
+| `tags` | Additional tags, passed unchanged to `docker/build-push-action`. Use full image references. | No | - |
+| `tag_prefix` | Prefix for the SHA tag | No | - |
+| `tag_suffix` | Suffix for the SHA tag | No | - |
+| `tag_latest` | Add the `latest` tag on default-branch builds | No | `true` |
+| `tag_nightly` | Add the `nightly` tag on default-branch builds (GHCR only) | No | `true` |
 | `google_workload_identity_provider` | Google Workload Identity Provider | No | - |
 | `google_service_account` | Google Service Account | No | - |
-| `platforms` | Platforms to build (e.g., linux/amd64, linux/arm64) | No | `linux/amd64` |
-| `outputs` | List of output destinations (e.g., type=docker, type=image,name=myimage) | No | - |
+| `platforms` | Platforms to build (for example `linux/amd64,linux/arm64`) | No | `linux/amd64` |
+| `outputs` | Extra BuildKit output destinations (for example `type=docker`) | No | - |
 | `cache_from` | BuildKit cache source (empty to disable) | No | `type=gha,scope=buildcache` |
 | `cache_to` | BuildKit cache destination, only used when publishing (empty to disable) | No | `type=gha,mode=max,scope=buildcache` |
 
-## Action Outputs
+## Outputs
 
 | Output | Description |
 |--------|-------------|
-| `ghcr_image_url` | Full GHCR image URL with primary tag |
-| `gar_image_url` | Full GAR image URL with primary tag |
+| `ghcr_image_url` | Full GHCR image URL with the SHA tag. Empty when the action does not publish to GHCR. |
+| `gar_image_url` | Full GAR image URL with the SHA tag. Empty when the action does not publish to GAR. |
 
-### Using Outputs
+### Using outputs
 
 ```yaml
 - name: Build and push image
@@ -142,15 +155,18 @@ jobs:
     echo "GHCR URL: ${{ steps.build.outputs.ghcr_image_url }}"
 ```
 
-## Publishing Behavior
+## Publishing behavior
 
-### GitHub Container Registry (GHCR)
+The action publishes to an enabled registry (`ghcr` or `google_ar`) on these events. GHCR and GAR follow the same rules.
 
-- **Push to default branch**: Creates SHA-tagged + nightly images
-- **Pull requests**: Creates SHA-tagged image (if `publish_on_pr: 'true'`)
-- **All other pushes**: No publishing (build-only)
+| Event | Publishes | Tags |
+|-------|-----------|------|
+| Push to the default branch | Yes | SHA, `latest`, `nightly` (GHCR only) |
+| Merge queue (`merge_group`) targeting the default branch | Yes | SHA, `latest`, `nightly` (GHCR only) |
+| Push to a branch matching `release_branches` | Yes | SHA |
+| Pull request with `publish_on_pr: 'true'` | Yes | SHA |
+| Any other event | No, build only | - |
 
-### Google Artifact Registry (GAR)
+The SHA tag is the full commit SHA with `tag_prefix` and `tag_suffix` applied. For pull requests the action uses the PR head SHA. For merge queues it uses the merge group head SHA. `tag_latest` and `tag_nightly` turn off the `latest` and `nightly` tags.
 
-- **Push to default branch only**: Creates SHA-tagged images (no nightly)
-- **All other events**: No publishing
+When the action publishes, it also writes the `cache_to` cache, an SBOM, and provenance attestations, and pushes gzip-compressed layers.
